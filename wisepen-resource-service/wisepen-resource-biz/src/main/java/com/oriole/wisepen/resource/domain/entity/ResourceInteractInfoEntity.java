@@ -21,4 +21,15 @@ public class ResourceInteractInfoEntity extends ResourceInteractInfoBase {
     private LocalDateTime createTime;
     @LastModifiedDate
     private LocalDateTime updateTime;
+
+    /**
+     * scoreAvg 为派生值，不存储于 MongoDB，从 scoreCount / scoreTotal 实时计算。
+     * scoreCount = 0 或数据缺失时返回 null（展示"暂无评分"）。
+     */
+    public Double getScoreAvg() {
+        Integer count = getScoreCount();
+        Long total = getScoreTotal();
+        if (count == null || count <= 0 || total == null) return null;
+        return (double) total / count;
+    }
 }

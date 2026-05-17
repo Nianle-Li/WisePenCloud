@@ -7,6 +7,9 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 
+/**
+ * 资源互动信息自定义 Repository，封装原子更新操作。
+ */
 @Repository
 public class CustomResourceInteractInfoRepository {
 
@@ -17,16 +20,39 @@ public class CustomResourceInteractInfoRepository {
     }
 
     /**
-     * 原子累加资源互动信息表中的阅读量。
-     * 使用 upsert：若记录不存在，自动补建并完成自增，无需单独初始化。
-     *
-     * @param resourceId 资源ID
-     * @param delta      本次累加值，通常为 1
+     * 原子累加阅读量，upsert 兼容历史遗留资源（文档不存在时自动创建）。
      */
     public void incrementReadCount(String resourceId, long delta) {
         Query query = Query.query(Criteria.where("_id").is(resourceId));
         Update update = new Update()
                 .inc("readCount", delta)
+                .setOnInsert("resourceId", resourceId);
+        mongoTemplate.upsert(query, update, ResourceInteractInfoEntity.class);
+    }
+
+    /**
+     * 原子累加点赞数，upsert 兼容历史遗留资源（首次点赞时自动创建统计文档）。
+     */
+    public void incrementLikeCount(String resourceId, long delta) {
+        Query query = Query.query(Criteria.where("_id").is(resourceId));
+        Update update = new Update()
+                .inc("likeCount", delta)
+                .setOnInsert("resourceId", resourceId);
+        mongoTemplate.upsert(query, update, ResourceInteractInfoEntity.class);
+    }
+
+    /**
+     * 原子累加评分统计，upsert 保证文档不存在时自动创建。
+     * scoreAvg 为派生值，不存储，由 ResourceInteractInfoEntity.getScoreAvg() 在读取时计算。
+     *
+     * @param scoreCountDelta 首次评分传 1，覆盖评分传 0
+     * @param scoreTotalDelta 分数增量；Long 类型确保 upsert 创建文档时 MongoDB 存储为 NumberLong
+     */
+    public void updateScoreStats(String resourceId, int scoreCountDelta, long scoreTotalDelta) {
+        Query query = Query.query(Criteria.where("_id").is(resourceId));
+        Update update = new Update()
+                .inc("scoreCount", scoreCountDelta)
+                .inc("scoreTotal", scoreTotalDelta)
                 .setOnInsert("resourceId", resourceId);
         mongoTemplate.upsert(query, update, ResourceInteractInfoEntity.class);
     }

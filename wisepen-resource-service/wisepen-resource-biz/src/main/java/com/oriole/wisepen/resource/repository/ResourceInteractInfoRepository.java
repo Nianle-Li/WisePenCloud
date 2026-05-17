@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface ResourceInteractInfoRepository extends MongoRepository<ResourceInteractInfoEntity, String> {
     List<ResourceInteractInfoEntity> findByResourceIdIn(List<String> resourceIds);
+
+    void deleteAllByResourceIdIn(List<String> resourceIds);
 }

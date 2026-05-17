@@ -17,6 +17,7 @@ import com.oriole.wisepen.resource.domain.dto.req.ResourceUpdateTagsRequest;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.domain.entity.GroupResConfigEntity;
 import com.oriole.wisepen.resource.domain.entity.ResourceItemEntity;
+import com.oriole.wisepen.resource.domain.entity.ResourceUserInteractRecordEntity;
 import com.oriole.wisepen.resource.domain.entity.TagEntity;
 import com.oriole.wisepen.resource.enums.ResourceAccessRole;
 import com.oriole.wisepen.resource.enums.ResourceAction;
@@ -26,13 +27,13 @@ import com.oriole.wisepen.resource.event.TagChangedEvent;
 import com.oriole.wisepen.resource.event.TagDeletedEvent;
 import com.oriole.wisepen.resource.event.TagTrashedEvent;
 import com.oriole.wisepen.resource.exception.ResourceError;
-import com.oriole.wisepen.resource.exception.ResPermissionErrorCode;
 import com.oriole.wisepen.resource.domain.entity.ResourceInteractInfoEntity;
 import com.oriole.wisepen.resource.repository.CustomResourceInteractInfoRepository;
 import com.oriole.wisepen.resource.repository.CustomResourceItemRepository;
 import com.oriole.wisepen.resource.repository.GroupResConfigRepository;
 import com.oriole.wisepen.resource.repository.ResourceInteractInfoRepository;
 import com.oriole.wisepen.resource.repository.ResourceItemRepository;
+import com.oriole.wisepen.resource.repository.ResourceUserInteractRecordRepository;
 import com.oriole.wisepen.resource.repository.TagRepository;
 import com.oriole.wisepen.resource.enums.FileOrganizationLogic;
 import com.oriole.wisepen.resource.mq.IEventPublisher;
@@ -78,6 +79,7 @@ public class ResourceServiceImpl implements IResourceService {
     private final GroupResConfigRepository groupResConfigRepository;
     private final ResourceInteractInfoRepository resourceInteractInfoRepository;
     private final CustomResourceInteractInfoRepository customResourceInteractInfoRepository;
+    private final ResourceUserInteractRecordRepository resourceUserInteractRecordRepository;
 
     private final IEventPublisher eventPublisher;
     private final MongoTemplate mongoTemplate;
@@ -384,10 +386,23 @@ public class ResourceServiceImpl implements IResourceService {
             }
         }
 
-        // 聚合互动信息：readCount 来自互动信息表，缺失时返回 0
-        resp.setReadCount(resourceInteractInfoRepository.findById(entity.getResourceId())
-                .map(ResourceInteractInfoEntity::getReadCount)
-                .orElse(0L));
+        // 聚合互动信息：readCount / likeCount / scoreAvg 来自互动信息表
+        ResourceInteractInfoEntity interactInfo = resourceInteractInfoRepository.findById(entity.getResourceId())
+            .orElse(null);
+        resp.setReadCount(interactInfo != null && interactInfo.getReadCount() != null
+            ? interactInfo.getReadCount() : 0L);
+        resp.setLikeCount(interactInfo != null && interactInfo.getLikeCount() != null
+            ? interactInfo.getLikeCount() : 0L);
+        resp.setScoreAvg(interactInfo != null ? interactInfo.getScoreAvg() : null);
+
+        // 回填当前用户点赞/评分状态
+        resp.setLiked(false);
+        resourceUserInteractRecordRepository
+            .findByUserIdAndResourceId(dto.getUserId().toString(), entity.getResourceId())
+            .ifPresent(userRecord -> {
+                resp.setLiked(Boolean.TRUE.equals(userRecord.getLiked()));
+                resp.setUserScore(userRecord.getScore());
+            });
         return resp;
     }
 
@@ -463,15 +478,19 @@ public class ResourceServiceImpl implements IResourceService {
             return resp;
         }).collect(Collectors.toList());
 
-        // 批量聚合互动信息，避免 N+1 查询
+        // 批量聚合互动信息（readCount / likeCount / scoreAvg），避免 N+1 查询
         List<String> resourceIds = entityPage.getContent().stream()
                 .map(ResourceItemEntity::getResourceId)
                 .collect(Collectors.toList());
-        Map<String, Long> readCountMap = resourceInteractInfoRepository.findByResourceIdIn(resourceIds)
+        Map<String, ResourceInteractInfoEntity> interactInfoMap = resourceInteractInfoRepository.findByResourceIdIn(resourceIds)
                 .stream()
-                .collect(Collectors.toMap(ResourceInteractInfoEntity::getResourceId,
-                        ResourceInteractInfoEntity::getReadCount));
-        responses.forEach(resp -> resp.setReadCount(readCountMap.getOrDefault(resp.getResourceId(), 0L)));
+                .collect(Collectors.toMap(ResourceInteractInfoEntity::getResourceId, e -> e));
+        responses.forEach(resp -> {
+            ResourceInteractInfoEntity info = interactInfoMap.get(resp.getResourceId());
+            resp.setReadCount(info != null && info.getReadCount() != null ? info.getReadCount() : 0L);
+            resp.setLikeCount(info != null && info.getLikeCount() != null ? info.getLikeCount() : 0L);
+            resp.setScoreAvg(info != null ? info.getScoreAvg() : null);
+        });
 
         PageR<ResourceItemResponse> pageR = new PageR<>(entityPage.getTotalElements(), page, size);
         pageR.addAll(responses);
@@ -508,6 +527,9 @@ public class ResourceServiceImpl implements IResourceService {
         ResourceInteractInfoEntity interactInfo = new ResourceInteractInfoEntity();
         interactInfo.setResourceId(entity.getResourceId());
         interactInfo.setReadCount(0L);
+        interactInfo.setLikeCount(0L);
+        interactInfo.setScoreCount(0);
+        interactInfo.setScoreTotal(0L);
         resourceInteractInfoRepository.save(interactInfo);
 
         log.info("resource created resourceId={} ownerId={} resourceType={} pathTagId={}",
@@ -550,6 +572,12 @@ public class ResourceServiceImpl implements IResourceService {
 
         long deletedCount = mongoTemplate.remove(query, RESOURCE_TRASH_COLLECTION).getDeletedCount();
         if (deletedCount > 0) {
+            List<String> deletedResourceIds = expiredResources.stream()
+                .map(ResourceItemEntity::getResourceId)
+                .collect(Collectors.toList());
+            resourceInteractInfoRepository.deleteAllByResourceIdIn(deletedResourceIds);
+            resourceUserInteractRecordRepository.deleteAllByResourceIdIn(deletedResourceIds);
+
             log.info("resources deleted mode=hard count={} resourceIds={}",
                     deletedCount, summarizeIds(resourceIds));
             // 发送 Kafka 广播，通知文件存储等下游微服务抹除物理文件
@@ -893,7 +921,7 @@ public class ResourceServiceImpl implements IResourceService {
     public void recordResourceRead(ResourceReadRecordReqDTO dto) {
         // 校验资源是否存在
         if (!resourceItemRepository.existsById(dto.getResourceId())) {
-            throw new ServiceException(ResPermissionErrorCode.RESOURCE_NOT_FOUND);
+            throw new ServiceException(ResourceError.RESOURCE_NOT_FOUND);
         }
 
         // userId 为 null 时无法区分用户，不能进行用户级去重，直接拒绝计数并告警。
