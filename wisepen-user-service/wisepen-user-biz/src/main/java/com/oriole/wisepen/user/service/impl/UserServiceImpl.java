@@ -111,10 +111,12 @@ public class UserServiceImpl implements IUserService {
                 .build();
         userProfileMapper.insert(userProfile);
 
-        UserWalletEntity userWallets = new UserWalletEntity();
-        userWallets.setUserId(user.getUserId());
-        userWallets.setTokenBalance(0);
-        userWallets.setTokenUsed(0);
+        UserWalletEntity userWallets = UserWalletEntity.builder()
+                .userId(user.getUserId())
+                .tokenBalance(0)
+                .tokenUsed(0)
+                .coinBalance(0)
+                .build();
         userWalletsMapper.insert(userWallets);
     }
 
@@ -124,10 +126,10 @@ public class UserServiceImpl implements IUserService {
         String username = req.getUsername();
         UserEntity userEntity = userMapper.selectOne(Wrappers.<UserEntity>lambdaQuery().eq(UserEntity::getUsername, username).last("LIMIT 1"));
 
-        if(userEntity == null){
+        if (userEntity == null) {
             log.warn("重置密码申请：用户名 {} 不存在，流程静默终止", username);
             return; // 处于安全考虑，不存在也不报错，防止撞库
-        } else if(userEntity.getStatus() == Status.UNIDENTIFIED){
+        } else if (userEntity.getStatus() == Status.UNIDENTIFIED) {
             // 未通过身份认证，不能找回密码
             throw new ServiceException(UserError.CANNOT_OPERATE_BEFORE_AUTH_VERIFICATION);
         }
@@ -180,7 +182,7 @@ public class UserServiceImpl implements IUserService {
     }
 
     @Override
-    public void resetPasswordAdmin(AuthPwdAdminResetRequest req){
+    public void resetPasswordAdmin(AuthPwdAdminResetRequest req) {
         Long userId = req.getUserId();
         updatePasswordByUserId(userId,
                 StrUtil.isBlank(req.getNewPassword()) ? userProperties.getDefaultPassword() : req.getNewPassword());
@@ -188,9 +190,9 @@ public class UserServiceImpl implements IUserService {
     }
 
     @Override
-    public void resetPassword(AuthPwdResetRequest req){
+    public void resetPassword(AuthPwdResetRequest req) {
         Long userId = redisCacheManager.getPwdResetUser(req.getToken());
-        if(userId == null){
+        if (userId == null) {
             throw new ServiceException(UserError.USER_PASSWORD_RESET_EXPIRED);
         }
 
@@ -211,7 +213,7 @@ public class UserServiceImpl implements IUserService {
     @Override
     public void updateProfile(Long userId, UserProfileUpdateRequest req) {
         UserEntity userEntity = userMapper.selectById(userId);
-        if(userEntity.getStatus() == Status.UNIDENTIFIED){
+        if (userEntity.getStatus() == Status.UNIDENTIFIED) {
             // 未通过身份认证，不能更新Profile
             throw new ServiceException(UserError.CANNOT_OPERATE_BEFORE_AUTH_VERIFICATION);
         }

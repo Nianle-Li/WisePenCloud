@@ -4,6 +4,7 @@ import lombok.Data;
 
 @Data
 public class WalletDetailResponse {
-	Integer tokenUsed;
-	Integer tokenBalance;
+    Integer tokenUsed;
+    Integer tokenBalance;
+    Integer coinBalance;
 }

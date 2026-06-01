@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.oriole.wisepen.common.core.domain.PageR;
 import com.oriole.wisepen.user.api.domain.base.UserDisplayBase;
+import com.oriole.wisepen.user.api.domain.dto.req.WalletSettleCoinTradeRequest;
 import com.oriole.wisepen.user.api.domain.dto.req.WalletTransferTokenRequest;
 import com.oriole.wisepen.user.api.enums.*;
 import com.oriole.wisepen.common.core.domain.enums.GroupType;
@@ -47,7 +48,7 @@ public class WalletServiceImpl implements IWalletService {
     private final GroupMapper groupMapper;
     private final GroupMemberMapper groupMemberMapper;
     private final UserWalletsMapper userWalletsMapper;
-    private final TokenTransactionRecordMapper tokenTransactionRecordMapper;
+    private final WalletTransactionRecordMapper walletTransactionRecordMapper;
     private final TokenVoucherMapper tokenVoucherMapper;
 
     private final RedisCacheManager redisCacheManager;
@@ -55,10 +56,12 @@ public class WalletServiceImpl implements IWalletService {
     @Override
     // 消费Token
     public void consumptionToken(TokenConsumptionMessage message) {
-        LambdaQueryWrapper<TokenTransactionRecordEntity> wrapper = new LambdaQueryWrapper<TokenTransactionRecordEntity>().eq(
-                TokenTransactionRecordEntity::getTraceId, message.getTraceId());
+        LambdaQueryWrapper<WalletTransactionRecordEntity> wrapper = new LambdaQueryWrapper<WalletTransactionRecordEntity>().eq(
+                WalletTransactionRecordEntity::getTraceId, message.getTraceId());
         // 避免重复处理业务
-        if (tokenTransactionRecordMapper.selectOne(wrapper) != null) return;
+        if (walletTransactionRecordMapper.selectOne(wrapper) != null) {
+            return;
+        }
 
         Long userId = message.getUserId();
         Long groupId = message.getGroupId();
@@ -72,16 +75,19 @@ public class WalletServiceImpl implements IWalletService {
         );
 
         if (groupId != null) {
-            tokenBill = this.updateGroupMemberTokenUsed(groupId, userId, message.getTraceId(), tokenBill, billMeta); // 从组成员侧扣除
+            // 从组成员侧扣除
+            tokenBill = this.updateGroupMemberTokenUsed(groupId, userId, message.getTraceId(), tokenBill, billMeta);
         }
-        if (tokenBill > 0) { // 即个人账单，或组内未能支付全部账单
-            this.updateUserTokenUsed(userId, message.getTraceId(), tokenBill, billMeta); // 从个人侧扣除
+        // 即个人账单，或组内未能支付全部账单
+        if (tokenBill > 0) {
+            // 从个人侧扣除
+            this.updateUserTokenUsed(userId, message.getTraceId(), tokenBill, billMeta);
         }
     }
 
     @Override
     // 改变小组 Token 余额
-    public void changeGroupTokenBalance(Long groupId, Long operator, Integer changedToken, TokenTransactionType type, String Meta) {
+    public void changeGroupTokenBalance(Long groupId, Long operator, Integer changedToken, WalletTransactionType type, String Meta) {
         GroupEntity group = groupMapper.selectById(groupId);
         if (group == null) {
             throw new ServiceException(UserError.GROUP_NOT_EXIST);
@@ -96,12 +102,17 @@ public class WalletServiceImpl implements IWalletService {
                 .setSql("token_balance = token_balance + " + changedToken);
 
         // 记录日志
-        TokenTransactionRecordEntity record = TokenTransactionRecordEntity.builder()
+        WalletTransactionRecordEntity record = WalletTransactionRecordEntity.builder()
                 .traceId(IdUtil.randomUUID())
-                .payerId(groupId).payerType(TokenPayerType.GROUP)
-                .tokenCount(changedToken)
-                .tokenTransactionType(type).operatorId(operator).meta(Meta).build();
-        tokenTransactionRecordMapper.insert(record);
+                .payerId(groupId)
+                .payerType(WalletPayerType.GROUP)
+                .count(changedToken)
+                .walletBusinessType(WalletBusinessType.TOKEN)
+                .walletTransactionType(type)
+                .operatorId(operator)
+                .meta(Meta)
+                .build();
+        walletTransactionRecordMapper.insert(record);
 
         groupMapper.update(null, wrapper);
         if (group.getTokenBalance() + changedToken > 0) {
@@ -113,7 +124,7 @@ public class WalletServiceImpl implements IWalletService {
 
     @Override
     // 改变个人 Token 余额
-    public void changeUserTokenBalance(Long userId, Long operator, Integer changedToken, TokenTransactionType type, String Meta) {
+    public void changeUserTokenBalance(Long userId, Long operator, Integer changedToken, WalletTransactionType type, String Meta) {
         UserWalletEntity walletEntity = userWalletsMapper.selectById(userId);
 
         LambdaUpdateWrapper<UserWalletEntity> wrapper = new LambdaUpdateWrapper<>();
@@ -121,12 +132,17 @@ public class WalletServiceImpl implements IWalletService {
                 .setSql("token_balance = token_balance + " + changedToken);
 
         // 记录日志
-        TokenTransactionRecordEntity record = TokenTransactionRecordEntity.builder()
+        WalletTransactionRecordEntity record = WalletTransactionRecordEntity.builder()
                 .traceId(IdUtil.randomUUID())
-                .payerId(userId).payerType(TokenPayerType.USER)
-                .tokenCount(changedToken)
-                .tokenTransactionType(type).operatorId(operator).meta(Meta).build();
-        tokenTransactionRecordMapper.insert(record);
+                .payerId(userId)
+                .payerType(WalletPayerType.USER)
+                .count(changedToken)
+                .walletBusinessType(WalletBusinessType.TOKEN)
+                .walletTransactionType(type)
+                .operatorId(operator)
+                .meta(Meta)
+                .build();
+        walletTransactionRecordMapper.insert(record);
 
         userWalletsMapper.update(null, wrapper);
         if (walletEntity.getTokenBalance() + changedToken > 0) {
@@ -141,7 +157,9 @@ public class WalletServiceImpl implements IWalletService {
     // 更新组成员 Token 配额
     public void updateGroupMemberTokenLimit(GroupMemberTokenLimitUpdateRequest req) {
         GroupEntity group = groupMapper.selectById(req.getGroupId());
-        if (group == null) throw new ServiceException(UserError.GROUP_NOT_EXIST);
+        if (group == null) {
+            throw new ServiceException(UserError.GROUP_NOT_EXIST);
+        }
 
         if (GroupType.NORMAL_GROUP.equals(group.getGroupType())) {
             throw new ServiceException(UserError.CANNOT_CONFIGURE_GROUP_WALLET_QUOTA);
@@ -206,12 +224,14 @@ public class WalletServiceImpl implements IWalletService {
                 .eq(GroupMemberEntity::getUserId, userId);
         GroupMemberEntity member = groupMemberMapper.selectOne(queryWrapper);
 
-        Integer groupTokenBalance = member.getTokenLimit()  - member.getTokenUsed();
+        Integer groupTokenBalance = member.getTokenLimit() - member.getTokenUsed();
         Integer overageTokenBill = 0;
         // 如果当前余额不足以支付订单
-        if (groupTokenBalance < tokenBill){
-            overageTokenBill  = tokenBill - groupTokenBalance; // 超支部分，转个人支付
-            tokenBill = groupTokenBalance; // 扣除所有余量
+        if (groupTokenBalance < tokenBill) {
+            // 超支部分，转个人支付
+            overageTokenBill = tokenBill - groupTokenBalance;
+            // 扣除所有余量
+            tokenBill = groupTokenBalance;
             // 触发组成员熔断
             redisCacheManager.blockGroupMemberChat(groupId, userId);
             log.warn("用户 {} 在群组 {} 的个人配额已触发熔断", userId, groupId);
@@ -228,13 +248,17 @@ public class WalletServiceImpl implements IWalletService {
         groupMemberMapper.update(null, wrapper);
 
         // 记录交易
-        TokenTransactionRecordEntity record = TokenTransactionRecordEntity.builder()
+        WalletTransactionRecordEntity record = WalletTransactionRecordEntity.builder()
                 .traceId(traceId)
-                .payerId(groupId).payerType(TokenPayerType.GROUP)
-                .tokenCount(tokenBill).tokenTransactionType(TokenTransactionType.SPEND)
+                .payerId(groupId)
+                .payerType(WalletPayerType.GROUP)
+                .count(tokenBill)
+                .walletTransactionType(WalletTransactionType.SPEND)
+                .walletBusinessType(WalletBusinessType.TOKEN)
                 .operatorId(userId)
-                .meta(BillMeta).build();
-        tokenTransactionRecordMapper.insert(record);
+                .meta(BillMeta)
+                .build();
+        walletTransactionRecordMapper.insert(record);
         return overageTokenBill;
     }
 
@@ -256,17 +280,21 @@ public class WalletServiceImpl implements IWalletService {
         }
 
         // 记录交易
-        TokenTransactionRecordEntity record = TokenTransactionRecordEntity.builder()
-                .traceId(traceId.toString())
-                .payerId(userId).payerType(TokenPayerType.USER)
-                .tokenCount(tokenBill).tokenTransactionType(TokenTransactionType.SPEND)
+        WalletTransactionRecordEntity record = WalletTransactionRecordEntity.builder()
+                .traceId(traceId)
+                .payerId(userId)
+                .payerType(WalletPayerType.USER)
+                .count(tokenBill)
+                .walletTransactionType(WalletTransactionType.SPEND)
+                .walletBusinessType(WalletBusinessType.TOKEN)
                 .operatorId(userId)
-                .meta(billMeta).build();
-        tokenTransactionRecordMapper.insert(record);
+                .meta(billMeta)
+                .build();
+        walletTransactionRecordMapper.insert(record);
     }
 
     @Override
-    public void transferTokenBetweenGroupAndUser(Long userId, WalletTransferTokenRequest req){
+    public void transferTokenBetweenGroupAndUser(Long userId, WalletTransferTokenRequest req) {
         this.transferTokenBetweenGroupAndUser(userId, req.getGroupId(), req.getTokenCount(), req.getTokenTransferType());
     }
 
@@ -281,29 +309,40 @@ public class WalletServiceImpl implements IWalletService {
 
         switch (tokenTransferType) {
             case GROUP_INFLOW:
-                if (userWalletEntity.getTokenBalance() < tokenCount) throw new ServiceException(UserError.WALLET_TOKEN_LIMIT_BELOW_USED);
-                this.changeUserTokenBalance(userId, userId, -tokenCount, TokenTransactionType.TRANSFER_OUT, null);
-                this.changeGroupTokenBalance(groupId, userId, tokenCount, TokenTransactionType.TRANSFER_IN, null);
+                if (userWalletEntity.getTokenBalance() < tokenCount) {
+                    throw new ServiceException(UserError.WALLET_TOKEN_LIMIT_BELOW_USED);
+                }
+                this.changeUserTokenBalance(userId, userId, -tokenCount, WalletTransactionType.TRANSFER_OUT, null);
+                this.changeGroupTokenBalance(groupId, userId, tokenCount, WalletTransactionType.TRANSFER_IN, null);
                 break;
             case USER_INFLOW:
-                if (groupEntity.getTokenBalance() < tokenCount) throw new ServiceException(UserError.WALLET_TOKEN_LIMIT_BELOW_USED);
-                this.changeUserTokenBalance(userId, userId, tokenCount, TokenTransactionType.TRANSFER_IN, null);
-                this.changeGroupTokenBalance(groupId, userId, -tokenCount, TokenTransactionType.TRANSFER_OUT, null);
+                if (groupEntity.getTokenBalance() < tokenCount) {
+                    throw new ServiceException(UserError.WALLET_TOKEN_LIMIT_BELOW_USED);
+                }
+                this.changeUserTokenBalance(userId, userId, tokenCount, WalletTransactionType.TRANSFER_IN, null);
+                this.changeGroupTokenBalance(groupId, userId, -tokenCount, WalletTransactionType.TRANSFER_OUT, null);
                 break;
         }
     }
 
+    @Override
     public void redeemVoucher(Long userId, String voucherCode) {
         LambdaQueryWrapper<TokenVoucherEntity> wrapper =
                 new LambdaQueryWrapper<TokenVoucherEntity>().eq(TokenVoucherEntity::getCode, voucherCode);
         TokenVoucherEntity voucher = tokenVoucherMapper.selectOne(wrapper);
 
         // 兑换券不存在
-        if (voucher==null) throw new ServiceException(UserError.WALLET_VOUCHER_NOT_FOUND);
+        if (voucher == null) {
+            throw new ServiceException(UserError.WALLET_VOUCHER_NOT_FOUND);
+        }
         // 兑换券已被使用
-        if (voucher.getStatus() == VoucherStatus.USED) throw new ServiceException(UserError.WALLET_VOUCHER_INVALID);
+        if (voucher.getStatus() == VoucherStatus.USED) {
+            throw new ServiceException(UserError.WALLET_VOUCHER_INVALID);
+        }
         // 兑换券已过期
-        if (voucher.getExpireTime() != null && !LocalDateTime.now().isBefore(voucher.getExpireTime())) throw new ServiceException(UserError.WALLET_VOUCHER_EXPIRED);
+        if (voucher.getExpireTime() != null && !LocalDateTime.now().isBefore(voucher.getExpireTime())) {
+            throw new ServiceException(UserError.WALLET_VOUCHER_EXPIRED);
+        }
 
         String voucherCodeMasked = "****-****-****-" + voucherCode.substring(voucherCode.length() - 4);
         // 先消费 Voucher
@@ -319,24 +358,26 @@ public class WalletServiceImpl implements IWalletService {
             throw new ServiceException(UserError.WALLET_VOUCHER_INVALID);
         }
         // 执行充值
-        this.changeUserTokenBalance(userId, userId, voucher.getAmount(), TokenTransactionType.REFILL, voucherCodeMasked);
+        this.changeUserTokenBalance(userId, userId, voucher.getAmount(), WalletTransactionType.REFILL, voucherCodeMasked);
     }
 
     @Override
     public PageR<WalletTransactionRecordResponse> listTransactions(
-            TokenPayerType payerType,
+            WalletPayerType payerType,
             Long payerId,
-            TokenTransactionType tokenTransactionType,
+            WalletTransactionType walletTransactionType,
+            WalletBusinessType walletBusinessType,
             Integer page, Integer size
     ) {
-        Page<TokenTransactionRecordEntity> pageParam = new Page<>(page, size);
-        LambdaQueryWrapper<TokenTransactionRecordEntity> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(TokenTransactionRecordEntity::getPayerId, payerId)
-                .eq(TokenTransactionRecordEntity::getPayerType, payerType)
-                .eq(tokenTransactionType != null, TokenTransactionRecordEntity::getTokenTransactionType, tokenTransactionType)
-                .orderByDesc(TokenTransactionRecordEntity::getCreateTime);
+        Page<WalletTransactionRecordEntity> pageParam = new Page<>(page, size);
+        LambdaQueryWrapper<WalletTransactionRecordEntity> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(WalletTransactionRecordEntity::getPayerId, payerId)
+                .eq(WalletTransactionRecordEntity::getPayerType, payerType)
+                .eq(walletBusinessType != null, WalletTransactionRecordEntity::getWalletBusinessType, walletBusinessType)
+                .eq(walletTransactionType != null, WalletTransactionRecordEntity::getWalletTransactionType, walletTransactionType)
+                .orderByDesc(WalletTransactionRecordEntity::getCreateTime);
 
-        IPage<TokenTransactionRecordEntity> transactionPage = tokenTransactionRecordMapper.selectPage(pageParam, wrapper);
+        IPage<WalletTransactionRecordEntity> transactionPage = walletTransactionRecordMapper.selectPage(pageParam, wrapper);
 
         PageR<WalletTransactionRecordResponse> pageR = new PageR<>(transactionPage.getTotal(), page, size);
         if (CollectionUtils.isEmpty(transactionPage.getRecords())) {
@@ -345,8 +386,9 @@ public class WalletServiceImpl implements IWalletService {
 
         // 提取所有不为空的 operatorId，去重收集到 Set 中
         Set<Long> operatorIds = transactionPage.getRecords().stream()
-                .map(TokenTransactionRecordEntity::getOperatorId)
-                .filter(Objects::nonNull) // 防御性编程：过滤掉为 null 的 ID
+                .map(WalletTransactionRecordEntity::getOperatorId)
+                // 防御性编程：过滤掉为 null 的 ID
+                .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
 
         // 批量查询用户信息
@@ -403,5 +445,52 @@ public class WalletServiceImpl implements IWalletService {
 
         pageR.addAll(records);
         return pageR;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void changeCoinBalance(Long userId, Long operatorId, String traceId, Integer changedCoin, WalletTransactionType type, String meta) {
+        LambdaUpdateWrapper<UserWalletEntity> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(UserWalletEntity::getUserId, userId);
+        if (changedCoin < 0) {
+            // 扣减余额必须在 SQL 条件中完成，避免并发下余额被扣成负数。
+            wrapper.ge(UserWalletEntity::getCoinBalance, -changedCoin);
+        }
+        wrapper.setSql("coin_balance = coin_balance + " + changedCoin);
+
+        int affectedRows = userWalletsMapper.update(null, wrapper);
+        if (affectedRows == 0) {
+            if (changedCoin < 0) {
+                throw new ServiceException(UserError.WALLET_COIN_INSUFFICIENT);
+            }
+            throw new ServiceException(UserError.WALLET_COIN_CHANGE_FAILED);
+        }
+
+        // 记录日志
+        WalletTransactionRecordEntity record = WalletTransactionRecordEntity.builder()
+                .traceId(traceId)
+                .payerId(userId)
+                .payerType(WalletPayerType.USER)
+                .count(changedCoin)
+                .walletTransactionType(type)
+                .walletBusinessType(WalletBusinessType.COIN)
+                .operatorId(operatorId)
+                .meta(meta)
+                .build();
+        walletTransactionRecordMapper.insert(record);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void settleCoinTrade(WalletSettleCoinTradeRequest req) {
+        LambdaQueryWrapper<WalletTransactionRecordEntity> wrapper = new LambdaQueryWrapper<WalletTransactionRecordEntity>().eq(
+                WalletTransactionRecordEntity::getTraceId, req.getTraceId());
+        // 避免重复处理业务
+        if (walletTransactionRecordMapper.selectOne(wrapper) != null) {
+            return;
+        }
+
+        this.changeCoinBalance(req.getBuyerId(), req.getBuyerId(), req.getTraceId(), -req.getPrice(), WalletTransactionType.SPEND, null);
+        this.changeCoinBalance(req.getSellerId(), req.getSellerId(), req.getTraceId(), req.getPrice(), WalletTransactionType.INCOME, null);
     }
 }

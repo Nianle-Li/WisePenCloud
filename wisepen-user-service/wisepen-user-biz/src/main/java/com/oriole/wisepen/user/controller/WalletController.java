@@ -9,8 +9,9 @@ import com.oriole.wisepen.user.api.domain.dto.req.WalletRedeemVoucherRequest;
 import com.oriole.wisepen.user.api.domain.dto.req.WalletTransferTokenRequest;
 import com.oriole.wisepen.user.api.domain.dto.res.WalletDetailResponse;
 import com.oriole.wisepen.user.api.domain.dto.res.WalletTransactionRecordResponse;
-import com.oriole.wisepen.user.api.enums.TokenPayerType;
-import com.oriole.wisepen.user.api.enums.TokenTransactionType;
+import com.oriole.wisepen.user.api.enums.WalletBusinessType;
+import com.oriole.wisepen.user.api.enums.WalletPayerType;
+import com.oriole.wisepen.user.api.enums.WalletTransactionType;
 import com.oriole.wisepen.user.service.IWalletService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
@@ -19,7 +20,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/user/wallet/")
+@RequestMapping("/user/wallet")
 @RequiredArgsConstructor
 @Validated
 @CheckLogin
@@ -51,20 +52,21 @@ public class WalletController {
     @GetMapping("/listTransactions")
     public R<PageR<WalletTransactionRecordResponse>> listTransactions(
             @RequestParam(value = "groupId", required = false) Long groupId,
-            @RequestParam(value = "type", required = false) TokenTransactionType tokenTransactionType,
+            @RequestParam(value = "walletTransactionType", required = false) WalletTransactionType walletTransactionType,
+            @RequestParam(value = "walletBusinessType", required = false) WalletBusinessType walletBusinessType,
             @RequestParam(value = "page", defaultValue = "1") @Min(1) Integer page,
             @RequestParam(value = "size", defaultValue = "20") @Min(1) Integer size
-            ) {
-        TokenPayerType payerType;
+    ) {
+        WalletPayerType payerType;
         Long payerId;
         if (groupId == null) {
-            payerType = TokenPayerType.USER;
+            payerType = WalletPayerType.USER;
             payerId = SecurityContextHolder.getUserId();
         } else {
-            payerType = TokenPayerType.GROUP;
+            payerType = WalletPayerType.GROUP;
             payerId = groupId;
             SecurityContextHolder.assertGroupRole(groupId, GroupRoleType.OWNER);
         }
-        return R.ok(walletService.listTransactions(payerType, payerId, tokenTransactionType, page, size));
+        return R.ok(walletService.listTransactions(payerType, payerId, walletTransactionType, walletBusinessType, page, size));
     }
 }

@@ -12,6 +12,7 @@ public enum UserSubject implements IBusinessSubject {
     GROUP_MEMBER,
     WALLET,
     WALLET_TOKEN,
+    WALLET_COIN,
     VOUCHER;
 
     @Override

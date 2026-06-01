@@ -50,7 +50,10 @@ public enum UserError implements IResult {
     // TOKEN点卡相关异常
     WALLET_VOUCHER_NOT_FOUND(3811, new ResultKey(BusinessDomain.USER, UserSubject.VOUCHER, ErrorReason.NOT_FOUND),"TOKEN 点卡不存在"),
     WALLET_VOUCHER_INVALID(3821, new ResultKey(BusinessDomain.USER, UserSubject.VOUCHER, ErrorReason.INVALID),"TOKEN 点卡不可用"),
-    WALLET_VOUCHER_EXPIRED(3831, new ResultKey(BusinessDomain.USER, UserSubject.VOUCHER, ErrorReason.EXPIRED),"TOKEN 点卡已过期");
+    WALLET_VOUCHER_EXPIRED(3831, new ResultKey(BusinessDomain.USER, UserSubject.VOUCHER, ErrorReason.EXPIRED),"TOKEN 点卡已过期"),
+    // Coin相关异常
+    WALLET_COIN_INSUFFICIENT(3911, new ResultKey(BusinessDomain.USER, UserSubject.WALLET_COIN, ErrorReason.BELOW_LOWER_BOUND), "金币余额不足"),
+    WALLET_COIN_CHANGE_FAILED(3912, new ResultKey(BusinessDomain.USER, UserSubject.WALLET_COIN, ErrorReason.FAILED), "金币变动失败");
 
     private final Integer code;
     private final ResultKey key;
