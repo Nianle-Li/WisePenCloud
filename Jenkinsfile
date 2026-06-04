@@ -91,6 +91,13 @@ pipeline {
                         }
                     }
                 }
+                stage('Docs Service') {
+                    steps {
+                        script {
+                            sh "docker build -t ${DOCKER_REGISTRY}/${PROJECT_NAME}-docs:${IMAGE_TAG} -f Dockerfile --build-arg MODULE_NAME=wisepen-docs-service/wisepen-docs-biz ."
+                        }
+                    }
+                }
                 stage('Resource Service') {
                     steps {
                         script {
