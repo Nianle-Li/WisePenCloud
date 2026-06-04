@@ -8,6 +8,9 @@ import java.util.List;
 
 @Data
 public class UserDetailInfoResponse implements Serializable {
+    /** 当前用户 ID，与 userInfo 平级返回，便于前端识别登录用户 */
+    private Long userId;
+
     UserInfoBase userInfo;
     UserProfileBase userProfile;
     List<String> readonlyFields;

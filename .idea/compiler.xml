@@ -22,11 +22,12 @@
         <module name="wisepen-note-biz" />
         <module name="wisepen-document-biz" />
         <module name="wisepen-resource-biz" />
-        <module name="wisepen-file-storage-biz" />
         <module name="wisepen-ai-asset-api" />
+        <module name="wisepen-file-storage-biz" />
         <module name="wisepen-file-storage-api" />
         <module name="wisepen-fudan-extension-biz" />
         <module name="wisepen-ai-asset-biz" />
+        <module name="wisepen-docs-biz" />
         <module name="wisepen-resource-api" />
         <module name="wisepen-system-biz" />
         <module name="wisepen-fudan-extension-api" />
@@ -44,6 +45,8 @@
       <module name="wisepen-cloud" options="-parameters -parameters" />
       <module name="wisepen-common" options="-parameters -parameters" />
       <module name="wisepen-common-log" options="-parameters -parameters" />
+      <module name="wisepen-docs-biz" options="-parameters -parameters" />
+      <module name="wisepen-docs-service" options="-parameters -parameters" />
       <module name="wisepen-document-api" options="-parameters -parameters" />
       <module name="wisepen-document-biz" options="-parameters -parameters" />
       <module name="wisepen-document-service" options="-parameters -parameters" />
