@@ -29,3 +29,9 @@ spring:
         - 10
   profiles:
     active: dev
+
+wisepen:
+  openapi:
+    title: 笔记服务 API
+    version: 1.0.0
+    description: WisePen 笔记内容、操作日志与详情接口

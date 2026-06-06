@@ -23,7 +23,6 @@ public class UserWalletEntity implements Serializable {
 
 	private Integer tokenBalance;
 	private Integer tokenUsed;
-	// TODO: 改表
 	private Integer coinBalance;
 
 	private LocalDateTime updateTime;

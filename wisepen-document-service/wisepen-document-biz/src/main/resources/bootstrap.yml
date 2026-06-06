@@ -44,3 +44,9 @@ logging:
     root: INFO
     org.jodconverter: DEBUG
     com.oriole.wisepen.file: INFO
+
+wisepen:
+  openapi:
+    title: 文档服务 API
+    version: 1.0.0
+    description: WisePen 文档上传、解析、转换与详情接口

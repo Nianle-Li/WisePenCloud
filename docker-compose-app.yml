@@ -45,6 +45,28 @@ services:
         aliases:
           - system-service
 
+  docs-service:
+    image: ${DOCKER_REGISTRY}/wisepencloud-docs:${APP_VERSION}
+    container_name: wisepen-docs-service
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR=nacos:8848
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR=nacos:8848
+      - OTEL_SERVICE_NAME=wisepen-docs-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - SPRING_CLOUD_INETUTILS_PREFERRED_NETWORKS=
+      - NACOS_USERNAME=${NACOS_USERNAME}
+      - NACOS_PASSWORD=${NACOS_PASSWORD}
+    volumes:
+      - ../logs/docs:/logs
+    networks:
+      wisepen-net:
+        aliases:
+          - docs-service
+
   resource-service:
     image: ${DOCKER_REGISTRY}/wisepencloud-resource:${APP_VERSION}
     container_name: wisepen-resource-service
@@ -154,6 +176,28 @@ services:
       wisepen-net:
         aliases:
           - note-service
+
+  ai-asset-service:
+    image: ${DOCKER_REGISTRY}/wisepencloud-ai-asset:${APP_VERSION}
+    container_name: wisepen-ai-asset-service
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR=nacos:8848
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR=nacos:8848
+      - OTEL_SERVICE_NAME=wisepen-ai-asset-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - SPRING_CLOUD_INETUTILS_PREFERRED_NETWORKS=
+      - NACOS_USERNAME=${NACOS_USERNAME}
+      - NACOS_PASSWORD=${NACOS_PASSWORD}
+    volumes:
+      - ../logs/system:/logs
+    networks:
+      wisepen-net:
+        aliases:
+          - ai-asset-service
 
 networks:
   wisepen-net:

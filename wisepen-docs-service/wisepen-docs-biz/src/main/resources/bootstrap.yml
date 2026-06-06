@@ -1,0 +1,79 @@
+server:
+  port: 19900
+
+spring:
+  application:
+    name: wisepen-docs-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
+        file-extension: yaml
+        group: DEFAULT_GROUP
+        shared-configs:
+          - data-id: wisepen-common-${spring.profiles.active}.yaml
+            group: DEFAULT_GROUP
+            refresh: true
+    inetutils:
+      ignored-interfaces:
+        - VMnet.*
+        - vEthernet.*
+        - docker0
+      preferred-networks:
+        - 10
+  profiles:
+    active: dev
+
+scalar:
+  enabled: true
+  path: /docs
+  pageTitle: WisePen API 文档
+  persist-auth: true
+  sources:
+    - title: 用户服务
+      slug: user
+      url: /docs/api/user
+      isDefault: true
+    - title: 系统服务
+      slug: system
+      url: /docs/api/system
+    - title: 资源服务
+      slug: resource
+      url: /docs/api/resource
+    - title: 文档服务
+      slug: document
+      url: /docs/api/document
+    - title: 文件存储服务
+      slug: file-storage
+      url: /docs/api/file-storage
+    - title: 复旦扩展服务
+      slug: fudan-extension
+      url: /docs/api/fudan-extension
+    - title: 笔记服务
+      slug: note
+      url: /docs/api/note
+    - title: AI 资产服务
+      slug: ai-asset
+      url: /docs/api/ai-asset
+
+wisepen:
+  openapi:
+    title: WisePen 文档服务 API
+    version: 1.0.0
+    description: WisePen 统一 API 文档入口
+  docs:
+    services:
+      user: wisepen-user-service
+      system: wisepen-system-service
+      resource: wisepen-resource-service
+      document: wisepen-document-service
+      file-storage: wisepen-file-storage-service
+      fudan-extension: wisepen-fudan-extension-service
+      note: wisepen-note-service
+      ai-asset: wisepen-ai-asset-service

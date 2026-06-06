@@ -1,8 +1,6 @@
 package com.oriole.wisepen.user.api.domain.dto.req;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.oriole.wisepen.user.api.constant.WalletValidationMsg;
-import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -31,10 +29,4 @@ public class WalletSettleCoinTradeRequest {
     private Integer price;
 
     private String meta;
-
-    @JsonIgnore
-    @AssertTrue(message = WalletValidationMsg.COIN_SELF_TRANSACTION_NOT_ALLOWED)
-    public boolean isNotSelfTransaction() {
-        return buyerId == null || !buyerId.equals(sellerId);
-    }
 }

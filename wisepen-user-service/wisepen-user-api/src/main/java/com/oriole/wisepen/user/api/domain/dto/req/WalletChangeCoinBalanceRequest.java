@@ -20,10 +20,4 @@ public class WalletChangeCoinBalanceRequest {
     private WalletTransactionType walletTransactionType;
 
     private String meta;
-
-    @JsonIgnore
-    @AssertTrue(message = WalletValidationMsg.COIN_CHANGE_AMOUNT_NOT_ZERO)
-    public boolean isChangedCoinNotZero() {
-        return changedCoin == null || changedCoin != 0;
-    }
 }

@@ -29,3 +29,9 @@ spring:
         - 10 #指定首选的网络号段 (校园网段10开头)
   profiles:
     active: dev # 激活开发环境配置
+
+wisepen:
+  openapi:
+    title: 系统服务 API
+    version: 1.0.0
+    description: WisePen 系统邮件、日志与用户反馈接口

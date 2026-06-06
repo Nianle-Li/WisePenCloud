@@ -59,9 +59,9 @@ public interface IWalletService {
     // 批量获得用户所有小组的 Token 信息
     PageR<GroupMemberTokenDetailResponse> getAllGroupTokenInfoByUserId(Long userId, Integer page, Integer size);
 
-    // 改变个人信息点余额（集市交易/管理员调账共用）
+    // 改变个人金币余额
     void changeCoinBalance(Long userId, Long operatorId, String traceId, Integer changedCoin, WalletTransactionType type, String meta);
 
-    // 集市交易：买家扣款、卖家入账（PAID，幂等）
+    // 结算金币交易
     void settleCoinTrade(WalletSettleCoinTradeRequest req);
 }

@@ -19,11 +19,8 @@ import java.time.LocalDateTime;
 public class WalletTransactionRecordEntity extends WalletTransactionRecordBase implements Serializable {
 	@TableId(type = IdType.ASSIGN_ID)
 	Long id;
-	// 计费方Id
-	Long payerId;
-	// 计费方类型
-	WalletPayerType payerType;
-	// 交易发起时间
+	Long payerId; // 计费方Id
+	WalletPayerType payerType; // 计费方类型
 	@TableField(value = "create_time", fill = FieldFill.INSERT)
-	LocalDateTime createTime;
+	LocalDateTime createTime; // 交易发起时间
 }
