@@ -26,4 +26,8 @@ public interface ResourceValidationMsg {
 
     // 互动相关校验
     String SCORE_RANGE_INVALID = "评分必须在1到5之间";
+
+    // 收藏相关校验
+    String COLLECTION_ID_NOT_BLANK = "收藏集合ID不能为空";
+    String COLLECTION_NAME_NOT_BLANK = "收藏集合名称不能为空";
 }

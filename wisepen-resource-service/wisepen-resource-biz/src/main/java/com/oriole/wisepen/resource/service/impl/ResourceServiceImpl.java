@@ -25,6 +25,7 @@ import com.oriole.wisepen.resource.exception.ResourceError;
 import com.oriole.wisepen.resource.domain.entity.ResourceInteractionInfoEntity;
 import com.oriole.wisepen.resource.repository.CustomResourceItemRepository;
 import com.oriole.wisepen.resource.repository.GroupResConfigRepository;
+import com.oriole.wisepen.resource.repository.FavoriteItemRepository;
 import com.oriole.wisepen.resource.repository.ResourceInteractionInfoRepository;
 import com.oriole.wisepen.resource.repository.ResourceItemRepository;
 import com.oriole.wisepen.resource.repository.ResourceUserInteractRecordRepository;
@@ -70,6 +71,7 @@ public class ResourceServiceImpl implements IResourceService {
     private final GroupResConfigRepository groupResConfigRepository;
     private final ResourceInteractionInfoRepository resourceInteractionInfoRepository;
     private final ResourceUserInteractRecordRepository resourceUserInteractRecordRepository;
+    private final FavoriteItemRepository favoriteItemRepository;
 
     private final IResourceEventPublisher eventPublisher;
     private final MongoTemplate mongoTemplate;
@@ -563,6 +565,7 @@ public class ResourceServiceImpl implements IResourceService {
                 .collect(Collectors.toList());
             resourceInteractionInfoRepository.deleteAllByResourceIdIn(deletedResourceIds);
             resourceUserInteractRecordRepository.deleteAllByResourceIdIn(deletedResourceIds);
+            favoriteItemRepository.deleteAllByResourceIdIn(deletedResourceIds);
 
             log.info("resources deleted mode=hard count={} resourceIds={}",
                     deletedCount, summarizeIds(resourceIds));

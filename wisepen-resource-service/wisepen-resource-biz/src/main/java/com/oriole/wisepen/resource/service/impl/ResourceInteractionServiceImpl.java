@@ -7,16 +7,20 @@ import com.oriole.wisepen.resource.domain.dto.req.ResourceRateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceLikeRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceReadRequest;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceUserInteractionRecordResponse;
+import com.oriole.wisepen.resource.domain.entity.FavoriteItemEntity;
 import com.oriole.wisepen.resource.domain.entity.ResourceUserInteractionRecordEntity;
 import com.oriole.wisepen.resource.exception.ResourceError;
 import com.oriole.wisepen.resource.repository.CustomResourceInteractionInfoRepository;
 import com.oriole.wisepen.resource.repository.CustomResourceUserInteractionRecordRepository;
+import com.oriole.wisepen.resource.repository.FavoriteItemRepository;
 import com.oriole.wisepen.resource.repository.ResourceItemRepository;
 import com.oriole.wisepen.resource.repository.ResourceUserInteractRecordRepository;
 import com.oriole.wisepen.resource.service.IResourceInteractionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 @Service
 @Slf4j
@@ -27,6 +31,7 @@ public class ResourceInteractionServiceImpl implements IResourceInteractionServi
     private final ResourceUserInteractRecordRepository resourceUserInteractRecordRepository;
     private final CustomResourceInteractionInfoRepository customResourceInteractionInfoRepository;
     private final CustomResourceUserInteractionRecordRepository customResourceUserInteractionRecordRepository;
+    private final FavoriteItemRepository favoriteItemRepository;
 
     private final RedisCacheManager redisCacheManager;
 
@@ -36,7 +41,13 @@ public class ResourceInteractionServiceImpl implements IResourceInteractionServi
                 .findByUserIdAndResourceId(userId, resourceId).orElse(
                         new ResourceUserInteractionRecordEntity(resourceId, userId)
                 );
-        return BeanUtil.copyProperties(interactionRecord, ResourceUserInteractionRecordResponse.class);
+        ResourceUserInteractionRecordResponse resp = BeanUtil.copyProperties(interactionRecord, ResourceUserInteractionRecordResponse.class);
+
+        // 收藏状态读自 FavoriteItemEntity，不存于互动记录
+        List<FavoriteItemEntity> favoriteItems = favoriteItemRepository.findByUserIdAndResourceId(userId, resourceId);
+        resp.setFavorited(!favoriteItems.isEmpty());
+        resp.setFavoritedCollectionIds(favoriteItems.stream().map(FavoriteItemEntity::getCollectionId).toList());
+        return resp;
     }
 
     /**
