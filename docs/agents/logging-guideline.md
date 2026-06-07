@@ -39,10 +39,12 @@
 日志文本使用 logfmt：
 
 ```text
-<message phrase> key1=value1 key2="value with space" key3=value3
+<message phrase>. key1=value1 key2="value with space" key3=value3
 ```
 
+- message phrase 是稳定、可读的英文短语，句尾统一使用英文句点 `.`。
 - key 使用 lowerCamelCase，并与领域字段同名，例如 `documentId`，不要写 `docId` 或 `doc_id`。
+- lowerCamelCase 约束结构化字段 key，不要求 message phrase 写成驼峰事件码。
 - value 默认不加引号；含空格时用双引号包裹；含双引号时使用 `\"` 转义。
 - 分隔符使用单个空格。
 - 单行日志不出现 `\n`、`\t`。
@@ -50,30 +52,31 @@
 
 ## 5. 日志语法
 
-message phrase 使用 `<noun> <past-tense verb>`：
+message phrase 使用自然英文短语，形如 `<noun phrase> <past-tense verb>`：
 
 ```text
-parseTask published documentId=abc123
-login succeeded userId=10086
-gc started task=storageZombie
-documentStatus changed documentId=abc123 from=UPLOADING to=UPLOADED
-permission denied op=deleteResource userId=10086 resourceId=res-1
-mailSend failed to=alice@x.edu subject="reset pwd"
+parse task publish requested. documentId=abc123
+login succeeded. userId=10086
+gc started. task=storageZombie
+document status changed. documentId=abc123 from=UPLOADING to=UPLOADED
+permission denied. op=deleteResource userId=10086 resourceId=res-1
+mail send failed. to=alice@x.edu subject="reset pwd"
 ```
 
-- noun 使用 lowerCamelCase 的领域名词或复合名词。
-- verb 从标准动词词表选取。
-- 允许 `<noun> <opVerb> <outcomeVerb>`，第二个动词只能是 `succeeded`、`failed`、`skipped`、`retried`。
-- message phrase 建议不超过 30 个字符。
+- noun phrase 使用稳定、可读的领域短语，不把 message phrase 写成自造事件码。
+- verb 优先使用下方常用动词；若自然英文短语更清楚，可以使用稳定、行业通用的过去式动词。
+- 允许 `<noun phrase> <opVerb> <outcomeVerb>`，例如 `event consumption failed.`，但不要把 message phrase 写成自造事件码。
+- message phrase 建议简短，优先不超过 60 个字符。
+- `reason` 只用于同一日志族中可聚合的业务决策原因，值使用自然语言并加引号，例如 `reason="status mismatch"`；没有同类日志族或字段本身已经说明原因时，移除 `reason`，把原因写进稳定的 message phrase。
 
-标准动词闭集：
+常用动词参考：
 
 | 类别 | 允许动词 |
 | --- | --- |
 | 实体生命周期 | `created` / `updated` / `deleted` / `restored` |
 | 操作结果 | `succeeded` / `failed` / `skipped` / `retried` |
 | 任务生命周期 | `started` / `finished` / `aborted` |
-| 消息生命周期 | `received` / `published` / `consumed` / `dropped` / `dispatched` |
+| 消息生命周期 | `received` / `publish requested` / `published` / `consumed` / `dropped` / `dispatched` |
 | 状态变更 | `changed` / `promotedTo` |
 | 增补状态变更 | `renamed` / `moved` |
 | 鉴权 | `granted` / `denied` / `stripped` |
@@ -138,12 +141,12 @@ HTTP 异常日志由公共异常处理器统一输出。涉及副作用的 Contr
 ```java
 @KafkaListener(topics = TOPIC_X, groupId = "...")
 public void onX(XMessage message) {
-    log.info("x received topic={} bizId={}", TOPIC_X, message.getBizId());
+    log.info("x received. topic={} bizId={}", TOPIC_X, message.getBizId());
     try {
         service.process(message);
-        log.debug("x consumed topic={} bizId={}", TOPIC_X, message.getBizId());
+        log.debug("x consumed. topic={} bizId={}", TOPIC_X, message.getBizId());
     } catch (Exception e) {
-        log.error("x consume failed topic={} bizId={}", TOPIC_X, message.getBizId(), e);
+        log.error("x consumption failed. topic={} bizId={}", TOPIC_X, message.getBizId(), e);
         throw e;
     }
 }
@@ -151,20 +154,20 @@ public void onX(XMessage message) {
 
 ### Kafka Producer
 
-Producer 必须返回 `CompletableFuture` 并向上传递异常。
+业务侧 Producer 默认只记录提交给发布器的意图。真正异步发送成功或失败由 MQ 基础设施层记录。
 
 ```java
-public CompletableFuture<SendResult<K, V>> publishX(XMessage message) {
-    return kafkaTemplate.send(TOPIC, message.getKey(), message)
-            .whenComplete((result, ex) -> {
-                if (ex != null) {
-                    log.error("x publish failed topic={} key={}", TOPIC, message.getKey(), ex);
-                } else {
-                    log.debug("x published topic={} key={}", TOPIC, message.getKey());
-                }
-            });
+public void publishX(XMessage message) {
+    try {
+        kafkaTemplate.send(TOPIC, message.getKey(), message);
+        log.debug("x publish requested. topic={} key={}", TOPIC, message.getKey());
+    } catch (Exception e) {
+        log.error("x publish request failed. topic={} key={}", TOPIC, message.getKey(), e);
+    }
 }
 ```
+
+业务侧不要用 `published` 表示尝试发布。只有基础设施层确认异步发送成功时，才使用 `published`。
 
 ### `@Scheduled`
 
@@ -172,7 +175,7 @@ public CompletableFuture<SendResult<K, V>> publishX(XMessage message) {
 @Scheduled(cron = "${...}")
 public void doGc() {
     long start = System.currentTimeMillis();
-    log.info("gc started task=storageZombie");
+    log.info("gc started. task=storageZombie");
     int processed = 0;
     int failed = 0;
     try {
@@ -182,14 +185,14 @@ public void doGc() {
                 processed++;
             } catch (Exception e) {
                 failed++;
-                log.warn("gcOne failed xId={}", entity.getId(), e);
+                log.warn("gc one failed. xId={}", entity.getId(), e);
             }
         }
     } catch (Exception e) {
-        log.error("gc aborted task=storageZombie", e);
+        log.error("gc aborted. task=storageZombie", e);
         return;
     }
-    log.info("gc finished task=storageZombie processed={} failed={} costMs={}",
+    log.info("gc finished. task=storageZombie processed={} failed={} costMs={}",
             processed, failed, System.currentTimeMillis() - start);
 }
 ```
@@ -201,11 +204,11 @@ public void doGc() {
 ```java
 @TransactionalEventListener
 public void handleXxxEvent(XxxEvent event) {
-    log.info("xxxEvent received bizId={} trigger={}", event.getBizId(), event.getTrigger());
+    log.info("xxx event received. bizId={} trigger={}", event.getBizId(), event.getTrigger());
     try {
         service.doX(event);
     } catch (Exception e) {
-        log.error("xxxEvent handle failed bizId={}", event.getBizId(), e);
+        log.error("xxx event handling failed. bizId={}", event.getBizId(), e);
     }
 }
 ```
@@ -222,7 +225,7 @@ public void handleXxxEvent(XxxEvent event) {
 - catch 块 logger 是否把 `Throwable` 作为最后参数。
 - 是否没有 `String.format` 构造日志。
 - 每条业务日志是否至少包含 1 个领域 ID。
-- message phrase 是否符合 `<noun> <past-tense verb>`。
+- message phrase 是否符合 `<noun phrase> <past-tense verb>` 并以 `.` 结束。
 - key 是否为 lowerCamelCase。
 - 是否没有打印密码、sessionId、token、Authorization。
 - `@KafkaListener` 是否入口 `INFO`、完成 `DEBUG`、异常 `ERROR` 并继续抛出。
