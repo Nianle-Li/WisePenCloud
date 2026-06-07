@@ -1,6 +1,8 @@
 package com.oriole.wisepen.resource.controller;
 
 import com.oriole.wisepen.common.core.domain.R;
+import com.oriole.wisepen.common.core.domain.enums.BusinessType;
+import com.oriole.wisepen.common.log.annotation.Log;
 import com.oriole.wisepen.resource.domain.dto.*;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.feign.RemoteResourceService;
@@ -36,7 +38,7 @@ public class InternalResourceItemController implements RemoteResourceService {
                     - 响应：返回新注册资源 ID。
                     """
     )
-    @Log(title = "创建资源", businessType = BusinessType.INSERT)
+    @Log(title = "内部注册资源", businessType = BusinessType.INSERT)
     @PostMapping("/addRes")
     public R<String> createResource(@Validated @RequestBody ResourceCreateReqDTO dto) {
         String resourceId = resourceService.createResourceItem(dto);

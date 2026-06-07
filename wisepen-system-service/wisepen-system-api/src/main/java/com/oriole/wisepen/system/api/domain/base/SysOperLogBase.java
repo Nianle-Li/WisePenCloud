@@ -1,17 +1,15 @@
-package com.oriole.wisepen.system.api.domain.dto;
+package com.oriole.wisepen.system.api.domain.base;
 
 import lombok.Data;
 
-import java.io.Serializable;
 import java.time.LocalDateTime;
 
-/**
- * System operation log query response.
- */
 @Data
-public class SysOperLogQueryResponse implements Serializable {
+public class SysOperLogBase {
     private String title;
     private Integer businessType;
+    private String method;
+    private String reqMethod;
     private Long operUserId;
     private String operUrl;
     private String operIp;
@@ -20,4 +18,5 @@ public class SysOperLogQueryResponse implements Serializable {
     private Integer status;
     private String errorMsg;
     private LocalDateTime operTime;
+    private Long costTime;
 }

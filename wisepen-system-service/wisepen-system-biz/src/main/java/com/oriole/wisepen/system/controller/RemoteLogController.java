@@ -3,18 +3,16 @@ package com.oriole.wisepen.system.controller;
 import com.oriole.wisepen.common.core.domain.PageR;
 import com.oriole.wisepen.common.core.domain.R;
 import com.oriole.wisepen.system.api.domain.dto.SysOperLogDTO;
-import com.oriole.wisepen.system.api.domain.dto.SysOperLogQueryRequest;
-import com.oriole.wisepen.system.api.domain.dto.SysOperLogQueryResponse;
+import com.oriole.wisepen.system.api.domain.dto.res.SysOperLogResponse;
 import com.oriole.wisepen.system.service.SysOperLogService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-/**
- * 远程日志调用接口
- * 供 Feign 内部调用
- */
+import java.time.LocalDateTime;
+
+
 @Tag(name = "内部 - 日志", description = "供业务微服务写入系统操作日志")
 @RestController
 @RequestMapping("/system/log") // 注意这里的基础路径
@@ -25,7 +23,6 @@ public class RemoteLogController {
 
     /**
      * 保存日志
-     * 对应 RemoteLogService 中的 @PostMapping("/system/log/save")
      */
     @Operation(
             summary = "内部保存操作日志",
@@ -38,14 +35,15 @@ public class RemoteLogController {
                     - 响应：返回日志写入是否成功。
                     """
     )
-    @PostMapping("/save")
-    public R<Boolean> save(@RequestBody SysOperLogDTO dto) {
+    @PostMapping("/saveLog")
+    public R<Boolean> saveLog(@RequestBody SysOperLogDTO dto) {
         return R.ok(sysOperLogService.saveLog(dto));
     }
 
     @Operation(summary = "内部查询操作日志")
-    @PostMapping("/list")
-    public R<PageR<SysOperLogQueryResponse>> list(@RequestBody SysOperLogQueryRequest query) {
-        return R.ok(sysOperLogService.listLogs(query));
+    @GetMapping("/listLogs")
+    public R<PageR<SysOperLogResponse>> listLogs(String operUrl, Long operUserId, LocalDateTime startTime, LocalDateTime endTime,
+                                                 Integer status, int page, int size) {
+        return R.ok(sysOperLogService.listLogs(operUrl, operUserId, startTime, endTime, status, page, size));
     }
 }

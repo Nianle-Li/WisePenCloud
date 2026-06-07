@@ -57,7 +57,7 @@ public class DocumentController {
                     - 响应：返回 documentId、objectKey、上传凭证信息和是否秒传。
                     """
     )
-    @Log(title = "上传文档", businessType = BusinessType.INSERT)
+    @Log(title = "初始化文档上传", businessType = BusinessType.INSERT)
     @PostMapping("/uploadDoc")
     public R<DocumentUploadInitResponse> uploadDoc(@Valid @RequestBody DocumentUploadInitRequest request) {
         Long uploaderId = SecurityContextHolder.getUserId();
