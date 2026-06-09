@@ -6,7 +6,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import java.util.List;
 import java.util.Optional;
 
-public interface ResourceUserInteractRecordRepository extends MongoRepository<ResourceUserInteractionRecordEntity, String> {
+public interface ResourceUserInteractionRecordRepository extends MongoRepository<ResourceUserInteractionRecordEntity, String> {
     Optional<ResourceUserInteractionRecordEntity> findByUserIdAndResourceId(String userId, String resourceId);
 
     void deleteAllByResourceIdIn(List<String> resourceIds);

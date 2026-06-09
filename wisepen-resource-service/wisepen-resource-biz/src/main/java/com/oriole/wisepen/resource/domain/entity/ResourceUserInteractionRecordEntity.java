@@ -12,7 +12,6 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * 用户维度互动记录，存储每个用户对每个资源的点赞状态与评分
@@ -30,9 +29,6 @@ public class ResourceUserInteractionRecordEntity extends ResourceUserInteraction
     private String resourceId;
 
     private String userId;
-
-    // 写端追踪字段，由 CustomRepository 用 $addToSet/$pull 原子维护；读端从 FavoriteItemEntity 独立填充
-    private List<String> favoritedCollectionIds;
 
     @CreatedDate
     private LocalDateTime createTime;

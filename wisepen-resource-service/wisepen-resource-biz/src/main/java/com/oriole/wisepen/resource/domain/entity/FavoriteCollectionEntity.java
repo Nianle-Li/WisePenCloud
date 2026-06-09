@@ -6,12 +6,13 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @EqualsAndHashCode(callSuper = true)
 @Data
@@ -27,10 +28,11 @@ public class FavoriteCollectionEntity extends FavoriteCollectionBase {
 
     private String userId;
 
+    /** 资源引用列表，按 favoritedAt 倒序 */
+    private List<FavoriteResourceRef> resources = new ArrayList<>();
+
     @CreatedDate
     private LocalDateTime createTime;
-    @LastModifiedDate
-    private LocalDateTime updateTime;
 
     public FavoriteCollectionEntity(String userId, String collectionName, String description, Boolean isDefault) {
         super(collectionName, description, isDefault);
