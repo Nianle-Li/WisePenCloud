@@ -1,43 +1,29 @@
 package com.oriole.wisepen.resource.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.IdUtil;
 import com.oriole.wisepen.common.core.domain.PageR;
 import com.oriole.wisepen.common.core.domain.enums.GroupRoleType;
 import com.oriole.wisepen.common.core.domain.enums.GroupType;
 import com.oriole.wisepen.common.core.exception.ServiceException;
-import com.oriole.wisepen.document.api.feign.RemoteDocumentService;
-import com.oriole.wisepen.note.api.feign.RemoteNoteService;
-import com.oriole.wisepen.resource.domain.GroupTagBind;
-import com.oriole.wisepen.resource.domain.ListingInfo;
-import com.oriole.wisepen.resource.domain.dto.ResourceCheckPermissionReqDTO;
-import com.oriole.wisepen.resource.domain.dto.ResourceCheckPermissionResDTO;
-import com.oriole.wisepen.resource.domain.dto.ResourceCreateReqDTO;
-import com.oriole.wisepen.resource.domain.dto.req.MarketAuditListingRequest;
-import com.oriole.wisepen.resource.domain.dto.req.MarketForkRequest;
-import com.oriole.wisepen.resource.domain.dto.req.MarketListResourceRequest;
-import com.oriole.wisepen.resource.domain.dto.req.MarketOffShelfRequest;
+import com.oriole.wisepen.resource.domain.MarketOfferInfo;
+import com.oriole.wisepen.resource.domain.dto.req.MarketAuditOfferRequest;
+import com.oriole.wisepen.resource.domain.dto.req.MarketPublishOfferRequest;
+import com.oriole.wisepen.resource.domain.dto.req.MarketOffShelfOfferRequest;
 import com.oriole.wisepen.resource.domain.dto.req.MarketPurchaseRequest;
-import com.oriole.wisepen.resource.domain.dto.req.ResourceForkRequest;
-import com.oriole.wisepen.resource.domain.dto.res.MarketListingResponse;
-import com.oriole.wisepen.resource.domain.dto.res.MarketPurchaseResponse;
-import com.oriole.wisepen.resource.domain.entity.MarketPurchaseEntity;
-import com.oriole.wisepen.resource.domain.entity.ResourceInteractionInfoEntity;
+import com.oriole.wisepen.resource.domain.dto.res.MarketOrderResponse;
+import com.oriole.wisepen.resource.domain.entity.MarketOrderEntity;
 import com.oriole.wisepen.resource.domain.entity.ResourceItemEntity;
-import com.oriole.wisepen.resource.domain.entity.TagEntity;
-import com.oriole.wisepen.resource.enums.MarketListingAuditStatus;
-import com.oriole.wisepen.resource.enums.MarketListingStatus;
-import com.oriole.wisepen.resource.enums.MarketSellMethod;
-import com.oriole.wisepen.resource.enums.ResourceAction;
-import com.oriole.wisepen.resource.enums.ResourceType;
+import com.oriole.wisepen.resource.domain.mq.ResourceForkMessage;
+import com.oriole.wisepen.resource.enums.MarketOfferStatus;
+import com.oriole.wisepen.resource.enums.MarketPurchaseType;
 import com.oriole.wisepen.resource.exception.ResourceError;
-import com.oriole.wisepen.resource.repository.MarketPurchaseRepository;
-import com.oriole.wisepen.resource.repository.ResourceInteractionInfoRepository;
+import com.oriole.wisepen.resource.repository.MarketOrderRepository;
 import com.oriole.wisepen.resource.repository.ResourceItemRepository;
-import com.oriole.wisepen.resource.repository.TagRepository;
+import com.oriole.wisepen.resource.mq.IResourceEventPublisher;
 import com.oriole.wisepen.resource.service.IMarketService;
 import com.oriole.wisepen.resource.service.IResourceService;
 import com.oriole.wisepen.user.api.domain.base.GroupDisplayBase;
-import com.oriole.wisepen.user.api.domain.base.UserDisplayBase;
 import com.oriole.wisepen.user.api.domain.dto.req.WalletSettleCoinTradeRequest;
 import com.oriole.wisepen.user.api.feign.RemoteUserService;
 import com.oriole.wisepen.user.api.feign.RemoteWalletService;
@@ -49,366 +35,233 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
-import java.util.stream.Collectors;
-import java.time.LocalDateTime;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class MarketServiceImpl implements IMarketService {
 
-    private final MarketPurchaseRepository marketPurchaseRepository;
-    private final ResourceInteractionInfoRepository resourceInteractionInfoRepository;
+    private final MarketOrderRepository marketOrderRepository;
     private final ResourceItemRepository resourceItemRepository;
-    private final TagRepository tagRepository;
     private final IResourceService resourceService;
+    private final IResourceEventPublisher resourceEventPublisher;
     private final RemoteUserService remoteUserService;
     private final RemoteWalletService remoteWalletService;
-    private final RemoteNoteService remoteNoteService;
-    private final RemoteDocumentService remoteDocumentService;
 
     @Override
-    public MarketListingResponse addListing(MarketListResourceRequest request, Long sellerId, Map<Long, GroupRoleType> groupRoles) {
+    public void publishOffer(MarketPublishOfferRequest request, Long sellerId, Map<Long, GroupRoleType> groupRoles) {
         // 检验是否为资源拥有者
-        String sellerIdStr = sellerId.toString();
-        resourceService.assertResourceOwner(request.getResourceId(), sellerIdStr);
         ResourceItemEntity resource = resourceItemRepository.findById(request.getResourceId())
                 .orElseThrow(() -> new ServiceException(ResourceError.RESOURCE_NOT_FOUND));
-
-        // 检验是否为集市组
-        Long marketGroupId = Long.valueOf(request.getMarketGroupId());
-        Map<Long, GroupDisplayBase> groupMap = remoteUserService.getGroupDisplayInfo(List.of(marketGroupId)).getData();
-        GroupDisplayBase groupInfo = groupMap == null ? null : groupMap.get(marketGroupId);
-        if (groupInfo == null || groupInfo.getGroupType() != GroupType.MARKET_GROUP) {
-            throw new ServiceException(ResourceError.MARKET_GROUP_REQUIRED);
-        }
-
-        // 检验上架权限 or 公开？
-        GroupRoleType marketRole = groupRoles == null ? null : groupRoles.get(marketGroupId);
-        if (marketRole == null || marketRole == GroupRoleType.NOT_MEMBER) {
+        if (!sellerId.toString().equals(resource.getOwnerId())) {
             throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
         }
 
-        // 检验上架 Tag
-        List<TagEntity> tags = tagRepository.findAllById(request.getTagIds());
-        if (tags.size() != request.getTagIds().size()
-                || tags.stream().anyMatch(tag -> !request.getMarketGroupId().equals(tag.getGroupId()))) {
-            throw new ServiceException(ResourceError.TAG_NODE_NOT_FOUND);
+        checkPermission(request.getMarketGroupId(), groupRoles);
+
+        MarketOfferInfo offer = resource.getMarketOfferInfo();
+        if (offer != null && offer.getStatus() == MarketOfferStatus.BANNED) {
+            throw new ServiceException(ResourceError.MARKET_OFFER_BANNED);
+        }
+        if (offer != null && offer.getStatus() == MarketOfferStatus.PUBLISHED) {
+            throw new ServiceException(ResourceError.MARKET_OFFER_ALREADY_EXISTS);
         }
 
-        // 检验上架 Version
-        Long listedVersion = request.getListedVersion();
-        MarketSellMethod sellMethod = request.getSellMethod();
-        // TODO: 文档版本管理
-        if (resource.getResourceType() != ResourceType.NOTE && listedVersion != 0L) {
-            throw new ServiceException(ResourceError.MARKET_VERSION_NOT_SUPPORTED);
-        }
-
-        ListingInfo existing = findListingInfo(resource, sellMethod, listedVersion);
-        if (existing != null && existing.getAuditStatus() == MarketListingAuditStatus.BANNED) {
-            throw new ServiceException(ResourceError.MARKET_LISTING_BANNED);
-        }
-        if (existing != null && existing.getStatus() == MarketListingStatus.LISTED) {
-            throw new ServiceException(ResourceError.MARKET_LISTING_ALREADY_EXISTS);
-        }
-
-        resourceService.updateGroupResourceTags(
-                request.getResourceId(),
-                request.getMarketGroupId(),
-                sellerIdStr,
-                marketRole,
-                request.getTagIds()
-        );
+        resourceService.updateGroupResourceTags(resource, request.getMarketGroupId(), sellerId.toString(), GroupRoleType.MEMBER, request.getTagIds());
 
         LocalDateTime now = LocalDateTime.now();
-
-        ListingInfo listing;
-        if (existing != null) {
-            listing = existing;
-            listing.setRevision(existing.getRevision() == null ? 1 : existing.getRevision() + 1);
-        } else {
-            if (resource.getListingInfos() == null) {
-                resource.setListingInfos(new ArrayList<>());
-            }
-            listing = ListingInfo.builder()
-                    .listingId(UUID.randomUUID().toString())
-                    .sellMethod(sellMethod)
-                    .listedVersion(listedVersion)
-                    .revision(1)
-                    .build();
-            resource.getListingInfos().add(listing);
+        offer = resource.getMarketOfferInfo();
+        if (offer == null) {
+            offer = MarketOfferInfo.builder().build();
+            resource.setMarketOfferInfo(offer);
         }
 
-        listing.setPrice(request.getPrice());
-        listing.setStatus(MarketListingStatus.LISTED);
-        listing.setSellerId(sellerIdStr);
-        listing.setListedAt(now);
-        listing.setOffShelfAt(null);
-        listing.setAuditStatus(MarketListingAuditStatus.PENDING);
-        resourceItemRepository.save(resource);
-        log.info("market listing saved listingId={} resourceId={} sellerId={} marketGroupId={} revision={}",
-                listing.getListingId(), resource.getResourceId(), sellerIdStr, request.getMarketGroupId(), listing.getRevision());
-
-        return toMarketListingResponse(resource, listing, request.getMarketGroupId(), request.getTagIds());
-    }
-
-    private ListingInfo findListingInfo(ResourceItemEntity resource, MarketSellMethod sellMethod, Long listedVersion) {
-        if (resource.getListingInfos() == null || resource.getListingInfos().isEmpty()) {
-            return null;
-        }
-        return resource.getListingInfos().stream()
-                .filter(info -> info.getSellMethod() == sellMethod
-                        && Objects.equals(info.getListedVersion(), listedVersion))
-                .findFirst()
-                .orElse(null);
+        offer.setPrice(request.getPrice());
+        offer.setOfferVersion(request.getOfferVersion());
+        offer.setStatus(MarketOfferStatus.PENDING);
+        offer.setSellerId(sellerId.toString());
+        offer.setPublishedAt(now);
+        offer.setOffShelfAt(null);
+        offer.setAuditMessage(null);
+        offer.setAuditedAt(null);
+        offer.setAuditorId(null);
+        resource = resourceItemRepository.save(resource);
+        log.info("marketOffer published resourceId={} sellerId={} marketGroupId={}",
+                resource.getResourceId(), sellerId, request.getMarketGroupId());
     }
 
     @Override
-    public void offShelfListing(MarketOffShelfRequest request, Long operatorId, Map<Long, GroupRoleType> groupRoles) {
-        ResourceItemEntity resource = resourceItemRepository.findByListingInfosListingId(request.getListingId())
-                .orElseThrow(() -> new ServiceException(ResourceError.MARKET_LISTING_NOT_FOUND));
-        ListingInfo listing = resource.getListingInfos().stream()
-                .filter(info -> request.getListingId().equals(info.getListingId()))
-                .findFirst()
-                .orElseThrow(() -> new ServiceException(ResourceError.MARKET_LISTING_NOT_FOUND));
-
-        Long marketGroupId = Long.valueOf(request.getMarketGroupId());
-        GroupDisplayBase groupInfo = remoteUserService.getGroupDisplayInfo(List.of(marketGroupId)).getData().get(marketGroupId);
-        if (groupInfo == null || groupInfo.getGroupType() != GroupType.MARKET_GROUP) {
-            throw new ServiceException(ResourceError.MARKET_GROUP_REQUIRED);
+    public void offShelfOffer(MarketOffShelfOfferRequest request, Long operatorId, Map<Long, GroupRoleType> groupRoles) {
+        ResourceItemEntity resource = resourceItemRepository.findById(request.getResourceId())
+                .orElseThrow(() -> new ServiceException(ResourceError.RESOURCE_NOT_FOUND));
+        MarketOfferInfo offer = resource.getMarketOfferInfo();
+        if (offer == null) {
+            throw new ServiceException(ResourceError.MARKET_OFFER_NOT_FOUND);
         }
-        GroupRoleType marketRole = groupRoles.get(marketGroupId);
-        boolean isSeller = operatorId.toString().equals(listing.getSellerId());
-        boolean isMarketAdmin = marketRole == GroupRoleType.OWNER || marketRole == GroupRoleType.ADMIN;
-        if (!isSeller && !isMarketAdmin) {
+
+        GroupRoleType marketRole = checkPermission(request.getMarketGroupId(), groupRoles);
+        if (!operatorId.toString().equals(resource.getOwnerId()) && marketRole != GroupRoleType.OWNER && marketRole != GroupRoleType.ADMIN) {
             throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
         }
 
-        LocalDateTime now = LocalDateTime.now();
-        listing.setStatus(MarketListingStatus.OFF_SHELF);
-        listing.setOffShelfAt(now);
-        listing.setRevision(listing.getRevision() == null ? 1 : listing.getRevision() + 1);
-        resourceItemRepository.save(resource);
+        resourceService.updateGroupResourceTags(resource, request.getMarketGroupId(), operatorId.toString(), marketRole, null);
+        offer = resource.getMarketOfferInfo();
+        if (offer == null) {
+            throw new ServiceException(ResourceError.MARKET_OFFER_NOT_FOUND);
+        }
 
-        resourceService.updateGroupResourceTags(
-                resource.getResourceId(),
-                request.getMarketGroupId(),
-                operatorId.toString(),
-                marketRole,
-                null
-        );
-        log.info("market listing offShelf listingId={} sourceResourceId={} operatorId={}",
-                listing.getListingId(), resource.getResourceId(), operatorId);
+        LocalDateTime now = LocalDateTime.now();
+        offer.setStatus(MarketOfferStatus.OFF_SHELF);
+        offer.setOffShelfAt(now);
+        resource = resourceItemRepository.save(resource);
+        log.info("marketOffer offShelf resourceId={} operatorId={}",
+                resource.getResourceId(), operatorId);
     }
 
     @Override
-    public MarketListingResponse auditListing(MarketAuditListingRequest request, Long operatorId, Map<Long, GroupRoleType> groupRoles) {
-        if (request.getAuditStatus() != MarketListingAuditStatus.APPROVED
-                && request.getAuditStatus() != MarketListingAuditStatus.REJECTED
-                && request.getAuditStatus() != MarketListingAuditStatus.BANNED) {
-            throw new ServiceException(ResourceError.MARKET_AUDIT_STATUS_INVALID);
-        }
-        if ((request.getAuditStatus() == MarketListingAuditStatus.REJECTED
-                || request.getAuditStatus() == MarketListingAuditStatus.BANNED)
+    public void auditOffer(MarketAuditOfferRequest request, Long operatorId, Map<Long, GroupRoleType> groupRoles) {
+        if ((request.getStatus() == MarketOfferStatus.REJECTED
+                || request.getStatus() == MarketOfferStatus.BANNED)
                 && !StringUtils.hasText(request.getAuditMessage())) {
             throw new ServiceException(ResourceError.MARKET_AUDIT_MESSAGE_REQUIRED);
         }
 
-        ResourceItemEntity resource = resourceItemRepository.findByListingInfosListingId(request.getListingId())
-                .orElseThrow(() -> new ServiceException(ResourceError.MARKET_LISTING_NOT_FOUND));
-        ListingInfo listing = resource.getListingInfos().stream()
-                .filter(info -> request.getListingId().equals(info.getListingId()))
-                .findFirst()
-                .orElseThrow(() -> new ServiceException(ResourceError.MARKET_LISTING_NOT_FOUND));
-        if (listing.getStatus() != MarketListingStatus.LISTED) {
-            throw new ServiceException(ResourceError.MARKET_LISTING_NOT_ACTIVE);
-        }
-        if (listing.getAuditStatus() != MarketListingAuditStatus.PENDING) {
-            throw new ServiceException(ResourceError.MARKET_LISTING_NOT_PENDING);
+        ResourceItemEntity resource = resourceItemRepository.findById(request.getResourceId())
+                .orElseThrow(() -> new ServiceException(ResourceError.RESOURCE_NOT_FOUND));
+        MarketOfferInfo offer = resource.getMarketOfferInfo();
+        if (offer == null) {
+            throw new ServiceException(ResourceError.MARKET_OFFER_NOT_FOUND);
         }
 
-        Long marketGroupId = Long.valueOf(request.getMarketGroupId());
-        GroupDisplayBase groupInfo = remoteUserService.getGroupDisplayInfo(List.of(marketGroupId)).getData().get(marketGroupId);
-        if (groupInfo == null || groupInfo.getGroupType() != GroupType.MARKET_GROUP) {
-            throw new ServiceException(ResourceError.MARKET_GROUP_REQUIRED);
-        }
-        GroupRoleType marketRole = groupRoles.get(marketGroupId);
-        if (marketRole != GroupRoleType.OWNER && marketRole != GroupRoleType.ADMIN) {
-            throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
-        }
-        if (resource.getGroupBinds().stream().noneMatch(bind -> request.getMarketGroupId().equals(bind.getGroupId()))) {
-            throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
-        }
+        checkPermission(request.getMarketGroupId(), groupRoles);
 
-        listing.setAuditStatus(request.getAuditStatus());
-        listing.setAuditMessage(request.getAuditMessage());
-        listing.setAuditedAt(LocalDateTime.now());
-        listing.setAuditorId(operatorId.toString());
+        offer.setStatus(request.getStatus());
+        offer.setAuditMessage(request.getAuditMessage());
+        offer.setAuditedAt(LocalDateTime.now());
+        offer.setAuditorId(operatorId.toString());
         resourceItemRepository.save(resource);
-        log.info("market listing audited listingId={} sourceResourceId={} operatorId={} auditStatus={}",
-                listing.getListingId(), resource.getResourceId(), operatorId, request.getAuditStatus());
-
-        List<String> tagIds = resource.getGroupBinds().stream()
-                .filter(bind -> request.getMarketGroupId().equals(bind.getGroupId()))
-                .findFirst()
-                .map(GroupTagBind::getTagIds)
-                .orElse(List.of());
-        return toMarketListingResponse(resource, listing, request.getMarketGroupId(), tagIds);
-    }
-
-    private MarketListingResponse toMarketListingResponse(ResourceItemEntity resource, ListingInfo listing,
-                                                            String marketGroupId, List<String> tagIds) {
-        MarketListingResponse response = BeanUtil.copyProperties(resource, MarketListingResponse.class);
-        BeanUtil.copyProperties(listing, response);
-        response.setSourceResourceId(resource.getResourceId());
-        response.setMarketGroupId(marketGroupId);
-        response.setTagIds(tagIds);
-        Map<String, String> tagMap = new HashMap<>();
-        if (tagIds != null && !tagIds.isEmpty()) {
-            tagRepository.findAllById(tagIds).forEach(tag -> tagMap.put(tag.getTagId(), tag.getTagName()));
-        }
-        response.setCurrentTags(tagMap);
-        ResourceInteractionInfoEntity interactionInfo = resourceInteractionInfoRepository.findById(resource.getResourceId())
-                .orElseGet(ResourceInteractionInfoEntity::new);
-        response.setResourceInteractionInfo(interactionInfo);
-        try {
-            Long seller = Long.valueOf(listing.getSellerId());
-            response.setSellerInfo(remoteUserService.getUserDisplayInfo(List.of(seller)).getData().get(seller));
-        } catch (Exception e) {
-            log.debug("market seller info degraded sellerId={}", listing.getSellerId(), e);
-            response.setSellerInfo(new UserDisplayBase("UNKNOW", null, null, null));
-        }
-        return response;
+        log.info("marketOffer audited resourceId={} operatorId={} status={}",
+                resource.getResourceId(), operatorId, request.getStatus());
     }
 
     @Override
-    public MarketPurchaseResponse purchaseListing(MarketPurchaseRequest request, Long buyerId, Map<Long, GroupRoleType> groupRoles) {
-        ResourceItemEntity resource = resourceItemRepository.findByListingInfosListingId(request.getListingId())
-                .orElseThrow(() -> new ServiceException(ResourceError.MARKET_LISTING_NOT_FOUND));
-        ListingInfo listing = resource.getListingInfos().stream()
-                .filter(info -> request.getListingId().equals(info.getListingId()))
-                .findFirst()
-                .orElseThrow(() -> new ServiceException(ResourceError.MARKET_LISTING_NOT_FOUND));
-        if (!listing.isMarketVisible()) {
-            throw new ServiceException(ResourceError.MARKET_LISTING_NOT_ACTIVE);
+    public MarketOrderResponse purchase(MarketPurchaseRequest request, Long buyerId, Map<Long, GroupRoleType> groupRoles) {
+        ResourceItemEntity resource = resourceItemRepository.findById(request.getResourceId())
+                .orElseThrow(() -> new ServiceException(ResourceError.RESOURCE_NOT_FOUND));
+        MarketOfferInfo offer = resource.getMarketOfferInfo();
+        if (offer == null) {
+            throw new ServiceException(ResourceError.MARKET_OFFER_NOT_FOUND);
         }
-        if (buyerId.toString().equals(listing.getSellerId())) {
-            throw new ServiceException(ResourceError.MARKET_SELF_PURCHASE_NOT_ALLOWED);
+        if (offer.getStatus() != MarketOfferStatus.PUBLISHED) {
+            throw new ServiceException(ResourceError.MARKET_OFFER_NOT_ACTIVE);
         }
-
-        Long marketGroupId = Long.valueOf(request.getMarketGroupId());
-        GroupDisplayBase groupInfo = remoteUserService.getGroupDisplayInfo(List.of(marketGroupId)).getData().get(marketGroupId);
-        if (groupInfo == null || groupInfo.getGroupType() != GroupType.MARKET_GROUP) {
-            throw new ServiceException(ResourceError.MARKET_GROUP_REQUIRED);
-        }
-        GroupRoleType marketRole = groupRoles.get(marketGroupId);
-        if (marketRole == null || marketRole == GroupRoleType.NOT_MEMBER) {
-            throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
-        }
-        if (resource.getGroupBinds().stream().noneMatch(bind -> request.getMarketGroupId().equals(bind.getGroupId()))) {
-            throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
+        if (buyerId.toString().equals(offer.getSellerId())) {
+            throw new ServiceException(ResourceError.MARKET_SELF_ORDER_NOT_ALLOWED);
         }
 
-        ResourceCheckPermissionResDTO permission = resourceService.checkPermission(ResourceCheckPermissionReqDTO.builder()
-                .resourceId(resource.getResourceId())
-                .userId(buyerId)
-                .groupRoles(groupRoles)
-                .build());
-        if (permission.getAllowedActions() == null || !permission.getAllowedActions().contains(ResourceAction.VIEW)) {
-            throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
-        }
+        checkPermission(request.getMarketGroupId(), groupRoles);
 
-        String traceId = "market:" + listing.getListingId() + ":" + buyerId + ":" + listing.getRevision();
-        MarketPurchaseEntity existing = marketPurchaseRepository.findByTradeTraceId(traceId).orElse(null);
+        String traceId = "market:" + resource.getResourceId() + ":" + request.getPurchaseType() + ":" + buyerId;
+        MarketOrderEntity existing = marketOrderRepository.findByTradeTraceId(traceId).orElse(null);
         if (existing != null) {
-            return BeanUtil.copyProperties(existing, MarketPurchaseResponse.class);
+            // TODO：补差价购买方式
+            throw new ServiceException(ResourceError.MARKET_ORDER_ALREADY_EXISTS);
         }
 
+        // TODO: 目前两种购买方式采用相同价格，后面可以卖家自己设置两种金额 or 同一配置比率（FORK 一次价格 = 50% × FORK 无限次价格）
+        Integer paidPrice = offer.getPrice();
         WalletSettleCoinTradeRequest tradeRequest = WalletSettleCoinTradeRequest.builder()
                 .traceId(traceId)
                 .buyerId(buyerId)
-                .sellerId(Long.valueOf(listing.getSellerId()))
-                .price(listing.getPrice())
-                .meta("market listing " + listing.getListingId())
+                .sellerId(Long.valueOf(offer.getSellerId()))
+                .price(paidPrice)
+                .meta("market resource " + resource.getResourceId() + " " + request.getPurchaseType())
                 .build();
         remoteWalletService.settleCoinTrade(tradeRequest);
 
-        MarketPurchaseEntity purchase = BeanUtil.copyProperties(resource, MarketPurchaseEntity.class);
-        BeanUtil.copyProperties(listing, purchase);
-        purchase.setSourceResourceId(resource.getResourceId());
-        purchase.setBuyerId(buyerId.toString());
-        purchase.setPaidPrice(listing.getPrice());
-        purchase.setForkedVersion(listing.getListedVersion() == null ? 0L : listing.getListedVersion());
-        purchase.setListingRevision(listing.getRevision());
-        purchase.setTradeTraceId(traceId);
-        MarketPurchaseEntity saved = marketPurchaseRepository.save(purchase);
-        log.info("market purchase saved purchaseId={} listingId={} buyerId={} revision={}",
-                saved.getPurchaseId(), listing.getListingId(), buyerId, listing.getRevision());
-        return BeanUtil.copyProperties(saved, MarketPurchaseResponse.class);
+        MarketOrderEntity order = BeanUtil.copyProperties(resource, MarketOrderEntity.class);
+        BeanUtil.copyProperties(offer, order);
+        order.setSourceResourceId(resource.getResourceId());
+        order.setBuyerId(buyerId.toString());
+        order.setPurchaseType(request.getPurchaseType());
+        order.setPaidPrice(paidPrice);
+        order.setPurchasedOfferVersion(offer.getOfferVersion());
+        order.setForkCount(0);
+        order.setTradeTraceId(traceId);
+        MarketOrderEntity saved = marketOrderRepository.save(order);
+        fork(saved.getOrderId(), buyerId);
+        saved = marketOrderRepository.findById(saved.getOrderId()).orElse(saved);
+        log.info("marketOrder created orderId={} resourceId={} buyerId={} purchaseType={} forkCount={}",
+                saved.getOrderId(), resource.getResourceId(), buyerId, request.getPurchaseType(), saved.getForkCount());
+        return BeanUtil.copyProperties(saved, MarketOrderResponse.class);
     }
 
     @Override
-    public MarketPurchaseResponse forkPurchase(MarketForkRequest request, Long buyerId) {
-        MarketPurchaseEntity purchase = marketPurchaseRepository.findById(request.getPurchaseId())
-                .orElseThrow(() -> new ServiceException(ResourceError.MARKET_PURCHASE_NOT_FOUND));
-        if (!buyerId.toString().equals(purchase.getBuyerId())) {
+    public void fork(String orderId, Long buyerId) {
+        MarketOrderEntity order = marketOrderRepository.findById(orderId)
+                .orElseThrow(() -> new ServiceException(ResourceError.MARKET_ORDER_NOT_FOUND));
+        if (!buyerId.toString().equals(order.getBuyerId())) {
             throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
         }
-        if (StringUtils.hasText(purchase.getForkedResourceId())) {
-            return BeanUtil.copyProperties(purchase, MarketPurchaseResponse.class);
-        }
 
-        ResourceItemEntity source = resourceItemRepository.findById(purchase.getSourceResourceId())
+        ResourceItemEntity source = resourceItemRepository.findById(order.getSourceResourceId())
                 .orElseThrow(() -> new ServiceException(ResourceError.RESOURCE_NOT_FOUND));
-        ResourceCreateReqDTO createReq = BeanUtil.copyProperties(source, ResourceCreateReqDTO.class);
-        createReq.setOwnerId(buyerId.toString());
-        createReq.setPathTagId(request.getPathTagId());
-        String forkedResourceId = resourceService.createResourceItem(createReq);
-
-        try {
-            Long forkedVersion = purchase.getForkedVersion() == null ? 0L : purchase.getForkedVersion();
-            ResourceForkRequest forkRequest = ResourceForkRequest.builder()
-                    .sourceResourceId(source.getResourceId())
-                    .targetResourceId(forkedResourceId)
-                    .version(forkedVersion)
-                    .buyerId(buyerId)
-                    .build();
-            if (source.getResourceType() == ResourceType.NOTE) {
-                remoteNoteService.forkNote(forkRequest);
-            } else if (Set.of(ResourceType.PDF, ResourceType.DOC, ResourceType.DOCX, ResourceType.PPT,
-                    ResourceType.PPTX, ResourceType.XLS, ResourceType.XLSX).contains(source.getResourceType())) {
-                remoteDocumentService.forkDocument(forkRequest);
-            } else {
-                throw new ServiceException(ResourceError.MARKET_RESOURCE_TYPE_NOT_SUPPORTED);
-            }
-            purchase.setForkedResourceId(forkedResourceId);
-            MarketPurchaseEntity saved = marketPurchaseRepository.save(purchase);
-            log.info("market fork finished purchaseId={} sourceResourceId={} forkedResourceId={}",
-                    saved.getPurchaseId(), saved.getSourceResourceId(), forkedResourceId);
-            return BeanUtil.copyProperties(saved, MarketPurchaseResponse.class);
-        } catch (Exception e) {
-            resourceService.softRemoveResources(List.of(forkedResourceId));
-            log.warn("market fork compensated purchaseId={} forkedResourceId={}", purchase.getPurchaseId(), forkedResourceId, e);
-            throw e;
+        MarketOfferInfo offer = source.getMarketOfferInfo();
+        if (offer == null) {
+            throw new ServiceException(ResourceError.MARKET_OFFER_NOT_FOUND);
         }
+        if (offer.getStatus() == MarketOfferStatus.BANNED) {
+            throw new ServiceException(ResourceError.MARKET_OFFER_BANNED);
+        }
+
+        if (order.getPurchaseType() == MarketPurchaseType.FORK_ONCE) {
+            if (order.getForkCount() >= 1) {
+                throw new ServiceException(ResourceError.MARKET_FORK_QUOTA_EXHAUSTED);
+            }
+        } else if (order.getPurchaseType() != MarketPurchaseType.FORK_UNLIMITED) {
+            throw new ServiceException(ResourceError.MARKET_PURCHASE_TYPE_INVALID);
+        }
+        order.setForkCount(order.getForkCount() + 1);
+        order = marketOrderRepository.save(order);
+
+        String forkTaskId = IdUtil.fastSimpleUUID();
+        ResourceForkMessage forkMessage = ResourceForkMessage.builder()
+                .forkTaskId(forkTaskId)
+                .sourceResourceId(order.getSourceResourceId())
+                .resourceType(source.getResourceType())
+                .version(offer.getOfferVersion())
+                .buyerId(buyerId)
+                .resourceName(source.getResourceName())
+                .preview(source.getPreview())
+                .size(source.getSize())
+                .build();
+        resourceEventPublisher.publishResourceForkEvent(forkMessage);
+        log.info("marketFork published orderId={} forkTaskId={} sourceResourceId={} purchaseType={} version={} forkCount={}",
+                order.getOrderId(), forkTaskId, order.getSourceResourceId(), order.getPurchaseType(), offer.getOfferVersion(), order.getForkCount());
     }
 
     @Override
-    public PageR<MarketPurchaseResponse> listMyPurchases(String buyerId, int page, int size) {
+    public PageR<MarketOrderResponse> listMyOrders(String buyerId, int page, int size) {
         Pageable pageable = PageRequest.of(Math.max(page - 1, 0), size);
-        Page<MarketPurchaseEntity> entityPage = marketPurchaseRepository.findByBuyerId(buyerId, pageable);
-        PageR<MarketPurchaseResponse> pageR = new PageR<>(entityPage.getTotalElements(), page, size);
+        Page<MarketOrderEntity> entityPage = marketOrderRepository.findByBuyerId(buyerId, pageable);
+        PageR<MarketOrderResponse> pageR = new PageR<>(entityPage.getTotalElements(), page, size);
         pageR.addAll(entityPage.getContent().stream()
-                .map(entity -> BeanUtil.copyProperties(entity, MarketPurchaseResponse.class))
+                .map(entity -> BeanUtil.copyProperties(entity, MarketOrderResponse.class))
                 .toList());
         return pageR;
     }
 
+    // 检验是否为 MarketGroup（如果 MarketGroup 能有固定 ID 可以不要这个逻辑）
+    private GroupRoleType checkPermission(String marketGroupId, Map<Long, GroupRoleType> groupRoles) {
+        Long marketGroupIdValue = Long.valueOf(marketGroupId);
+        Map<Long, GroupDisplayBase> groupMap = remoteUserService.getGroupDisplayInfo(List.of(marketGroupIdValue)).getData();
+        GroupDisplayBase groupInfo = groupMap == null ? null : groupMap.get(marketGroupIdValue);
+        if (groupInfo == null || groupInfo.getGroupType() != GroupType.MARKET_GROUP) {
+            throw new ServiceException(ResourceError.MARKET_GROUP_REQUIRED);
+        }
+        return groupRoles == null ? null : groupRoles.get(marketGroupIdValue);
+    }
 }

@@ -7,8 +7,8 @@ import com.oriole.wisepen.user.api.domain.base.UserDisplayBase;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import java.util.List;
 import java.util.Map;
+import java.util.List;
 
 @EqualsAndHashCode(callSuper = true)
 @Data
@@ -24,6 +24,5 @@ public class ResourceItemResponse extends ResourceItemInfoBase {
     private List<ResourceAction> overrideGrantedActions;
     private Map<String, List<ResourceAction>> specifiedUsersGrantedActions;
 
-    /** 有上架记录时返回 listingInfos；无记录或未通过可见性过滤时为 null */
-    private List<ListingInfoResponse> listingInfos;
+    private MarketOfferInfoResponse offerInfo;
 }

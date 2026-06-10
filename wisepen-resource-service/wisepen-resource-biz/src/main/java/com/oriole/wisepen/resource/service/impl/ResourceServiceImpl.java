@@ -13,7 +13,7 @@ import com.oriole.wisepen.resource.domain.GroupTagBind;
 import com.oriole.wisepen.resource.domain.dto.*;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceRenameRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceUpdateActionPermissionRequest;
-import com.oriole.wisepen.resource.domain.dto.res.ListingInfoResponse;
+import com.oriole.wisepen.resource.domain.dto.res.MarketOfferInfoResponse;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.domain.entity.GroupResConfigEntity;
 import com.oriole.wisepen.resource.domain.entity.ResourceItemEntity;
@@ -211,9 +211,13 @@ public class ResourceServiceImpl implements IResourceService {
 
     @Override
     public void updateGroupResourceTags(String resourceId, String groupId, String userId, GroupRoleType groupRole, List<String> tagIds) {
-        ResourceItemEntity entity = resourceItemRepository.findById(resourceId)
+        ResourceItemEntity resource = resourceItemRepository.findById(resourceId)
                 .orElseThrow(() -> new ServiceException(ResourceError.RESOURCE_NOT_FOUND));
+        updateGroupResourceTags(resource, groupId, userId, groupRole, tagIds);
+    }
 
+    @Override
+    public void updateGroupResourceTags(ResourceItemEntity resource, String groupId, String userId, GroupRoleType groupRole, List<String> tagIds) {
         if (tagIds != null && !tagIds.isEmpty()) {
             // 查找并检查Tag
             List<TagEntity> validTags = findAndValidateTags(groupId, tagIds);
@@ -229,11 +233,11 @@ public class ResourceServiceImpl implements IResourceService {
             }
         }
 
-        entity.setGroupBinds(updateResourceGroupBinds(entity.getGroupBinds(), groupId, tagIds));
-        resourceItemRepository.save(entity);
+        resource.setGroupBinds(updateResourceGroupBinds(resource.getGroupBinds(), groupId, tagIds));
+        resourceItemRepository.save(resource);
         log.info("resourceTags changed resourceId={} groupId={} tagCount={}",
-                entity.getResourceId(), groupId, tagIds == null ? 0 : tagIds.size());
-        eventPublisher.publishAclRecalculateEvent(entity.getResourceId(), "RESOURCE_TAGS_CHANGED");
+                resource.getResourceId(), groupId, tagIds == null ? 0 : tagIds.size());
+        eventPublisher.publishAclRecalculateEvent(resource.getResourceId(), "RESOURCE_TAGS_CHANGED");
     }
 
     private List<TagEntity> findAndValidateTags(String groupId, List<String> tagIds) {
@@ -472,16 +476,15 @@ public class ResourceServiceImpl implements IResourceService {
             }
             resp.setCurrentTags(tagMap);
 
-            List<ListingInfoResponse> listingInfos = null;
-            if (entity.getListingInfos() != null && !entity.getListingInfos().isEmpty()) {
+            MarketOfferInfoResponse offerInfo = null;
+            if (entity.getMarketOfferInfo() != null) {
                 boolean isOwner = currentUserId.equals(entity.getOwnerId());
                 boolean isGroupAdmin = userGroupRole == GroupRoleType.ADMIN || userGroupRole == GroupRoleType.OWNER;
-                listingInfos = entity.getListingInfos().stream()
-                        .filter(info -> isOwner || isGroupAdmin || info.isMarketVisible())
-                        .map(info -> BeanUtil.copyProperties(info, ListingInfoResponse.class))
-                        .collect(Collectors.collectingAndThen(Collectors.toList(), list -> list.isEmpty() ? null : list));
+                if (isOwner || isGroupAdmin || entity.getMarketOfferInfo().getStatus() == MarketOfferStatus.PUBLISHED) {
+                    offerInfo = BeanUtil.copyProperties(entity.getMarketOfferInfo(), MarketOfferInfoResponse.class);
+                }
             }
-            resp.setListingInfos(listingInfos);
+            resp.setOfferInfo(offerInfo);
 
             return resp;
         }).collect(Collectors.toList());

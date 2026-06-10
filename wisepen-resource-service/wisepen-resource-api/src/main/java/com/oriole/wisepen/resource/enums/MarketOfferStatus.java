@@ -5,20 +5,19 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
-/**
- * 集市上架审核状态。
- */
 @Getter
 @AllArgsConstructor
-public enum MarketListingAuditStatus {
-    /** 待审核，不可在集市公开展示 */
+public enum MarketOfferStatus {
+    /** 已提交上架，待审核，不可购买 */
     PENDING(1, "PENDING"),
-    /** 审核通过，可与 LISTED 状态一起在集市展示 */
-    APPROVED(2, "APPROVED"),
-    /** 审核驳回，不可在集市展示 */
+    /** 审核通过并上架，可购买 */
+    PUBLISHED(2, "PUBLISHED"),
+    /** 审核驳回，不可购买 */
     REJECTED(3, "REJECTED"),
-    /** 审核封禁，永久禁止该上架条目再次提交 */
-    BANNED(4, "BANNED");
+    /** 审核封禁，不可再次上架 */
+    BANNED(4, "BANNED"),
+    /** 已下架，不可购买 */
+    OFF_SHELF(5, "OFF_SHELF");
 
     private final int code;
 

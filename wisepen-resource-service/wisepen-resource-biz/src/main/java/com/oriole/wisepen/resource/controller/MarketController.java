@@ -6,21 +6,20 @@ import com.oriole.wisepen.common.core.domain.R;
 import com.oriole.wisepen.common.core.domain.enums.BusinessType;
 import com.oriole.wisepen.common.log.annotation.Log;
 import com.oriole.wisepen.common.security.annotation.CheckLogin;
-import com.oriole.wisepen.resource.domain.dto.req.MarketAuditListingRequest;
-import com.oriole.wisepen.resource.domain.dto.req.MarketForkRequest;
-import com.oriole.wisepen.resource.domain.dto.req.MarketListResourceRequest;
-import com.oriole.wisepen.resource.domain.dto.req.MarketOffShelfRequest;
+import com.oriole.wisepen.resource.domain.dto.req.MarketPublishOfferRequest;
+import com.oriole.wisepen.resource.domain.dto.req.MarketOffShelfOfferRequest;
 import com.oriole.wisepen.resource.domain.dto.req.MarketPurchaseRequest;
-import com.oriole.wisepen.resource.domain.dto.res.MarketListingResponse;
-import com.oriole.wisepen.resource.domain.dto.res.MarketPurchaseResponse;
+import com.oriole.wisepen.resource.domain.dto.res.MarketOrderResponse;
 import com.oriole.wisepen.resource.service.IMarketService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -37,55 +36,92 @@ public class MarketController {
 
     private final IMarketService marketService;
 
-    @Operation(summary = "上架资源")
+    @Operation(
+            summary = "上架资源",
+            description = """
+                    - 用途：资源所有者提交资源到集市，进入待审核状态。
+                    - 请求：resourceId 指定资源；marketGroupId 指定集市群；tagIds 指定集市标签；price 是 Fork 购买基础价格；offerVersion 是上架版本。
+                    - 约束：当前用户必须是资源所有者；目标小组必须是集市组；已封禁的上架记录不可再次上架；已发布的上架记录不可重复上架。
+                    - 处理：创建或复用资源上的单条 offerInfo，将状态置为 PENDING，更新集市标签绑定并触发资源 ACL 重算；不创建订单。
+                    - 失败：资源不存在 -> ResourceError.RESOURCE_NOT_FOUND；当前用户不是资源所有者 -> ResourceError.RESOURCE_PERMISSION_DENIED；目标小组不是集市组 -> ResourceError.MARKET_GROUP_REQUIRED；上架记录已发布 -> ResourceError.MARKET_OFFER_ALREADY_EXISTS；上架记录已封禁 -> ResourceError.MARKET_OFFER_BANNED。
+                    - 响应：成功时返回空结果。
+                    """
+    )
     @Log(title = "上架资源", businessType = BusinessType.INSERT)
-    @PostMapping("/addListing")
-    public R<MarketListingResponse> addListing(@Valid @RequestBody MarketListResourceRequest request) {
-        return R.ok(marketService.addListing(request, SecurityContextHolder.getUserId(), SecurityContextHolder.getGroupRoleMap()));
-    }
-
-    @Operation(summary = "下架资源")
-    @Log(title = "下架资源", businessType = BusinessType.UPDATE)
-    @PostMapping("/offShelfListing")
-    public R<Void> offShelfListing(@Valid @RequestBody MarketOffShelfRequest request) {
-        marketService.offShelfListing(request, SecurityContextHolder.getUserId(), SecurityContextHolder.getGroupRoleMap());
+    @PostMapping("/publishOffer")
+    public R<Void> publishOffer(@Valid @RequestBody MarketPublishOfferRequest request) {
+        marketService.publishOffer(request, SecurityContextHolder.getUserId(), SecurityContextHolder.getGroupRoleMap());
         return R.ok();
     }
 
-    @Operation(summary = "审核上架")
-    @Log(title = "审核上架", businessType = BusinessType.UPDATE)
-    @PostMapping("/auditListing")
-    public R<MarketListingResponse> auditListing(@Valid @RequestBody MarketAuditListingRequest request) {
-        return R.ok(marketService.auditListing(
-                request,
-                SecurityContextHolder.getUserId(),
-                SecurityContextHolder.getGroupRoleMap()
-        ));
+    @Operation(
+            summary = "下架资源",
+            description = """
+                    - 用途：卖家或集市管理员将已提交到集市的资源下架。
+                    - 请求：resourceId 指定已上架资源；marketGroupId 指定集市群。
+                    - 约束：目标小组必须是集市组；当前用户必须是卖家本人或该集市群 OWNER、ADMIN。
+                    - 处理：将 offerInfo 状态置为 OFF_SHELF，记录下架时间，并清空该集市群下的资源标签绑定；不删除已有订单。
+                    - 失败：上架记录不存在 -> ResourceError.MARKET_OFFER_NOT_FOUND；目标小组不是集市组 -> ResourceError.MARKET_GROUP_REQUIRED；当前用户无权操作 -> ResourceError.RESOURCE_PERMISSION_DENIED。
+                    - 响应：成功时返回空结果。
+                    """
+    )
+    @Log(title = "下架资源", businessType = BusinessType.UPDATE)
+    @PostMapping("/offShelfOffer")
+    public R<Void> offShelfOffer(@Valid @RequestBody MarketOffShelfOfferRequest request) {
+        marketService.offShelfOffer(request, SecurityContextHolder.getUserId(), SecurityContextHolder.getGroupRoleMap());
+        return R.ok();
     }
 
-    @Operation(summary = "购买资源")
+    @Operation(
+            summary = "购买资源",
+            description = """
+                    - 用途：买家购买集市资源的 Fork 权益。
+                    - 请求：resourceId 指定已上架资源；marketGroupId 指定集市群；purchaseType 指定 FORK_ONCE 或 FORK_UNLIMITED。
+                    - 约束：上架记录必须处于 PUBLISHED；目标小组必须是集市组且资源仍绑定在该集市群；买家不能购买自己上架的资源。
+                    - 处理：按 offerInfo.price 结算，按 resourceId、purchaseType、buyerId 做幂等；创建订单并记录购买权益、购买版本和 Fork 次数，随后调用复制流程执行首次 Fork；不修改原资源权限。
+                    - 失败：上架记录不存在 -> ResourceError.MARKET_OFFER_NOT_FOUND；资源未上架或已下架 -> ResourceError.MARKET_OFFER_NOT_ACTIVE；不能购买自己上架的资源 -> ResourceError.MARKET_SELF_ORDER_NOT_ALLOWED；目标小组不是集市组 -> ResourceError.MARKET_GROUP_REQUIRED；资源未绑定该集市群 -> ResourceError.RESOURCE_PERMISSION_DENIED；购买权益类型无效 -> ResourceError.MARKET_PURCHASE_TYPE_INVALID。
+                    - 响应：返回购买记录信息。
+                    """
+    )
     @Log(title = "购买资源", businessType = BusinessType.INSERT)
-    @PostMapping("/purchaseListing")
-    public R<MarketPurchaseResponse> purchaseListing(@Valid @RequestBody MarketPurchaseRequest request) {
-        return R.ok(marketService.purchaseListing(
-                request,
-                SecurityContextHolder.getUserId(),
-                SecurityContextHolder.getGroupRoleMap()
-        ));
+    @PostMapping("/purchase")
+    public R<MarketOrderResponse> purchase(@Valid @RequestBody MarketPurchaseRequest request) {
+        return R.ok(marketService.purchase(request, SecurityContextHolder.getUserId(), SecurityContextHolder.getGroupRoleMap()));
     }
 
-    @Operation(summary = "复制已购买资源")
+    @Operation(
+            summary = "复制已购买资源",
+            description = """
+                    - 用途：买家基于已购买订单复制当前已上架版本到个人空间。
+                    - 请求：路径参数 orderId 指定购买记录。
+                    - 约束：购买记录必须属于当前用户；对应上架记录必须仍处于 PUBLISHED；FORK_ONCE 订单只能在 forkCount 小于 1 时执行。
+                    - 处理：先读取订单并更新 forkCount，再发布资源复制消息，复制当前 offerInfo.offerVersion；不使用原子条件更新。
+                    - 失败：购买记录不存在 -> ResourceError.MARKET_ORDER_NOT_FOUND；当前用户无权操作 -> ResourceError.RESOURCE_PERMISSION_DENIED；购买权益类型无效 -> ResourceError.MARKET_PURCHASE_TYPE_INVALID；可用 Fork 次数已用完 -> ResourceError.MARKET_FORK_QUOTA_EXHAUSTED；资源不存在 -> ResourceError.RESOURCE_NOT_FOUND；资源未上架或已下架 -> ResourceError.MARKET_OFFER_NOT_ACTIVE。
+                    - 响应：成功时返回空结果。
+                    """
+    )
     @Log(title = "复制已购买资源", businessType = BusinessType.INSERT)
-    @PostMapping("/forkPurchase")
-    public R<MarketPurchaseResponse> forkPurchase(@Valid @RequestBody MarketForkRequest request) {
-        return R.ok(marketService.forkPurchase(request, SecurityContextHolder.getUserId()));
+    @PostMapping("/fork/{orderId}")
+    public R<Void> fork(@PathVariable("orderId") @NotBlank String orderId) {
+        marketService.fork(orderId, SecurityContextHolder.getUserId());
+        return R.ok();
     }
 
-    @Operation(summary = "我的购买")
-    @GetMapping("/listMyPurchases")
-    public R<PageR<MarketPurchaseResponse>> listMyPurchases(
+    @Operation(
+            summary = "分页查询我的购买",
+            description = """
+                    - 用途：查询当前用户购买过的集市资源订单，供用户查看购买类型并从订单入口继续 Fork。
+                    - 请求：page、size 控制分页。
+                    - 约束：当前用户必须已登录。
+                    - 处理：按当前用户 buyerId 分页查询订单，返回购买类型、支付价格、购买版本和 Fork 次数；不校验原资源当前是否仍可 Fork。
+                    - 失败：无业务失败分支。
+                    - 响应：返回当前用户购买记录分页。
+                    """
+    )
+    @GetMapping("/listMyOrders")
+    public R<PageR<MarketOrderResponse>> listMyOrders(
             @RequestParam(value = "page", defaultValue = "1") @Min(1) int page,
             @RequestParam(value = "size", defaultValue = "20") @Min(1) int size) {
-        return R.ok(marketService.listMyPurchases(SecurityContextHolder.getUserId().toString(), page, size));
+        return R.ok(marketService.listMyOrders(SecurityContextHolder.getUserId().toString(), page, size));
     }
 }

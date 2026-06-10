@@ -50,20 +50,18 @@ public enum ResourceError implements IResult {
     CANNOT_CHANGE_FILE_ORG_LOGIC_FROM_TAG_TO_FOLDER(5611, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.FILE_ORG_LOGIC, ErrorReason.UNSUPPORTED), "小组资源管理模式不允许从TAG改为FOLDER"),
 
     // Market 相关异常
-    MARKET_LISTING_NOT_FOUND(5711, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_FOUND), "上架记录不存在"),
-    MARKET_PURCHASE_NOT_FOUND(5712, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_FOUND), "购买记录不存在"),
-    MARKET_LISTING_ALREADY_EXISTS(5713, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.ALREADY_EXISTS), "该资源已在该集市上架"),
+    MARKET_OFFER_NOT_FOUND(5711, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_FOUND), "上架记录不存在"),
+    MARKET_ORDER_NOT_FOUND(5712, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_FOUND), "购买记录不存在"),
+    MARKET_OFFER_ALREADY_EXISTS(5713, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.ALREADY_EXISTS), "该资源已在该集市上架"),
+    MARKET_ORDER_ALREADY_EXISTS(5714,new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.ALREADY_EXISTS), "该资源已购买"),
     MARKET_GROUP_REQUIRED(5721, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.INVALID), "目标小组不是集市组"),
-    MARKET_LISTING_NOT_ACTIVE(5722, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "资源未上架或已下架"),
-    MARKET_SELF_PURCHASE_NOT_ALLOWED(5723, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "不能购买自己上架的资源"),
-    MARKET_VERSION_NOT_SUPPORTED(5724, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.UNSUPPORTED), "该资源类型暂不支持指定版本"),
-    MARKET_RESOURCE_TYPE_NOT_SUPPORTED(5725, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.UNSUPPORTED), "该资源类型暂不支持复制"),
-    MARKET_PURCHASE_ALREADY_FORKED(5726, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "该购买记录已完成复制"),
-    CANNOT_BIND_MARKET_RESOURCE_DIRECTLY(5727, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE_TAG, ErrorReason.NOT_ALLOWED), "集市资源挂载必须通过上架接口完成"),
-    MARKET_LISTING_NOT_PENDING(5728, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "上架记录不在待审核状态"),
-    MARKET_AUDIT_STATUS_INVALID(5729, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.INVALID), "审核状态仅允许通过、驳回或封禁"),
+    MARKET_OFFER_NOT_ACTIVE(5722, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "资源未上架或已下架"),
+    MARKET_SELF_ORDER_NOT_ALLOWED(5723, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "不能购买自己上架的资源"),
+    CANNOT_BIND_MARKET_RESOURCE_DIRECTLY(5724, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE_TAG, ErrorReason.NOT_ALLOWED), "集市资源挂载必须通过上架接口完成"),
     MARKET_AUDIT_MESSAGE_REQUIRED(5730, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.INVALID), "驳回或封禁时必须填写审核说明"),
-    MARKET_LISTING_BANNED(5731, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "该上架记录已被封禁，不可再次上架");
+    MARKET_OFFER_BANNED(5731, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "该上架记录已被封禁，不可再次上架"),
+    MARKET_PURCHASE_TYPE_INVALID(5732, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.INVALID), "购买权益类型无效"),
+    MARKET_FORK_QUOTA_EXHAUSTED(5733, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "购买记录可用 Fork 次数已用完");
 
     private final Integer code;
     private final ResultKey key;

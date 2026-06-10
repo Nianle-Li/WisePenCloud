@@ -28,14 +28,11 @@ public interface ResourceValidationMsg {
     String SCORE_RANGE_INVALID = "评分必须在1到5之间";
 
     // Market 相关校验
-    String MARKET_LISTING_ID_NOT_BLANK = "上架记录ID不能为空";
-    String MARKET_PURCHASE_ID_NOT_BLANK = "购买记录ID不能为空";
     String MARKET_PRICE_NOT_NULL = "价格不能为空";
     String MARKET_PRICE_INVALID = "价格必须大于0";
     String MARKET_VERSION_NOT_NULL = "上架版本不能为空";
-    String MARKET_VERSION_INVALID = "上架版本不能小于0";
-    String MARKET_SELL_METHOD_NOT_NULL = "售卖方式不能为空";
+    String MARKET_VERSION_INVALID = "上架版本必须大于0";
+    String MARKET_PURCHASE_TYPE_NOT_NULL = "购买权益类型不能为空";
 
-    String MARKET_AUDIT_STATUS_NOT_NULL = "审核状态不能为空";
-    String MARKET_AUDIT_MESSAGE_NOT_BLANK = "驳回时必须填写审核说明";
+    String MARKET_OFFER_STATUS_NOT_NULL = "目标状态不能为空";
 }

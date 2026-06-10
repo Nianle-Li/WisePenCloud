@@ -1,6 +1,6 @@
 package com.oriole.wisepen.resource.domain.entity;
 
-import com.oriole.wisepen.resource.domain.base.MarketPurchaseBase;
+import com.oriole.wisepen.resource.domain.base.MarketOrderBase;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -19,11 +19,11 @@ import java.time.LocalDateTime;
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "wisepen_market_purchases")
-@CompoundIndex(name = "idx_market_purchase_trace", def = "{'tradeTraceId': 1}", unique = true)
-public class MarketPurchaseEntity extends MarketPurchaseBase {
+@Document(collection = "wisepen_market_orders")
+@CompoundIndex(name = "idx_market_order_trace", def = "{'tradeTraceId': 1}", unique = true)
+public class MarketOrderEntity extends MarketOrderBase {
     @Id
-    private String purchaseId;
+    private String orderId;
 
     @CreatedDate
     private LocalDateTime createTime;

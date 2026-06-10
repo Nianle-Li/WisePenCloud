@@ -23,6 +23,4 @@ public interface ResourceItemRepository extends MongoRepository<ResourceItemEnti
     @Query(value = "{ 'groupBinds.groupId' : ?0 }")
     List<ResourceItemEntity> findByGroupId(String groupId);
 
-    @Query("{ 'listingInfos.listingId': ?0 }")
-    Optional<ResourceItemEntity> findByListingInfosListingId(String listingId);
 }
