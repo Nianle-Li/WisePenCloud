@@ -20,7 +20,7 @@ public class ResourceDeletedConsumer {
 
     private final NoteServiceImpl noteService;
 
-    @KafkaListener(topics = TOPIC_RESOURCE_PHYSICAL_DESTROY, groupId = "wisepen-resource-physical-destroy-group")
+    @KafkaListener(topics = TOPIC_RESOURCE_PHYSICAL_DESTROY, groupId = "wisepen-note-physical-destroy-group")
     public void onResourceDeleted(ResourceDeletedMessage message) {
         Map<ResourceType, List<String>> typedMap = message.getTypedResourceIds();
         // 笔记服务只关心 NOTE 类型的资源
