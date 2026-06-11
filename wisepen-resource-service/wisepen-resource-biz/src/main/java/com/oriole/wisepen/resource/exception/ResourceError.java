@@ -61,7 +61,12 @@ public enum ResourceError implements IResult {
     MARKET_AUDIT_MESSAGE_REQUIRED(5730, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.INVALID), "驳回或封禁时必须填写审核说明"),
     MARKET_OFFER_BANNED(5731, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "该上架记录已被封禁，不可再次上架"),
     MARKET_PURCHASE_TYPE_INVALID(5732, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.INVALID), "购买权益类型无效"),
-    MARKET_FORK_QUOTA_EXHAUSTED(5733, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "购买记录可用 Fork 次数已用完");
+    MARKET_FORK_QUOTA_EXHAUSTED(5733, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.RESOURCE, ErrorReason.NOT_ALLOWED), "购买记录可用 Fork 次数已用完"),
+
+    // 收藏相关异常
+    FAVORITE_COLLECTION_NOT_FOUND(5811, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.FAVORITE, ErrorReason.NOT_FOUND), "收藏集合不存在"),
+    FAVORITE_COLLECTION_ACCESS_DENIED(5821, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.FAVORITE, ErrorReason.PERMISSION_DENIED), "无权操作此收藏集合"),
+    DEFAULT_COLLECTION_CANNOT_DELETE(5831, new ResultKey(BusinessDomain.RESOURCE, ResourceSubject.FAVORITE, ErrorReason.NOT_ALLOWED), "默认收藏集合不可删除");
 
     private final Integer code;
     private final ResultKey key;

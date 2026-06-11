@@ -22,35 +22,28 @@ public class CustomResourceUserInteractionRecordRepository {
 
     private ResourceUserInteractionRecordEntity findAndSetField(String resourceId, String userId, String field, Object value) {
         Query query = Query.query(Criteria.where("resourceId").is(resourceId).and("userId").is(userId));
-
         Update update = new Update()
                 .set(field, value)
                 .setOnInsert("resourceId", resourceId)
                 .setOnInsert("userId", userId);
-
+        // upsert 兼容历史遗留用户（文档不存在时自动创建）；returnNew=false 使调用方拿到操作前的旧值
         return mongoTemplate.findAndModify(
                 query, update,
                 FindAndModifyOptions.options().upsert(true).returnNew(false),
                 ResourceUserInteractionRecordEntity.class);
     }
 
-    /**
-     * 原子写入阅读状态
-     */
+    /** 原子写入阅读状态 */
     public ResourceUserInteractionRecordEntity findAndSetRead(String resourceId, String userId, boolean read) {
         return findAndSetField(resourceId, userId, "read", read);
     }
 
-    /**
-     * 原子写入点赞状态
-     */
+    /** 原子写入点赞状态 */
     public ResourceUserInteractionRecordEntity findAndSetLiked(String resourceId, String userId, boolean liked) {
         return findAndSetField(resourceId, userId, "liked", liked);
     }
 
-    /**
-     * 原子写入评分
-     */
+    /** 原子写入评分 */
     public ResourceUserInteractionRecordEntity findAndSetScore(String resourceId, String userId, int score) {
         return findAndSetField(resourceId, userId, "score", score);
     }

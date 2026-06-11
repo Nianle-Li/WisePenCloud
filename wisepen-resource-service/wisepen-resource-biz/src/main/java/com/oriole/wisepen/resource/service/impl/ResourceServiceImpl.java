@@ -23,12 +23,11 @@ import com.oriole.wisepen.resource.event.TagChangedEvent;
 import com.oriole.wisepen.resource.event.TagDeletedEvent;
 import com.oriole.wisepen.resource.event.TagTrashedEvent;
 import com.oriole.wisepen.resource.exception.ResourceError;
-import com.oriole.wisepen.resource.domain.entity.ResourceInteractionInfoEntity;
+import com.oriole.wisepen.resource.repository.CustomFavoriteCollectionRepository;
 import com.oriole.wisepen.resource.repository.CustomResourceItemRepository;
 import com.oriole.wisepen.resource.repository.GroupResConfigRepository;
-import com.oriole.wisepen.resource.repository.ResourceInteractionInfoRepository;
 import com.oriole.wisepen.resource.repository.ResourceItemRepository;
-import com.oriole.wisepen.resource.repository.ResourceUserInteractRecordRepository;
+import com.oriole.wisepen.resource.repository.ResourceUserInteractionRecordRepository;
 import com.oriole.wisepen.resource.repository.TagRepository;
 import com.oriole.wisepen.resource.mq.IResourceEventPublisher;
 import com.oriole.wisepen.resource.service.IGroupResService;
@@ -69,8 +68,8 @@ public class ResourceServiceImpl implements IResourceService {
     private final ResourceItemRepository resourceItemRepository;
     private final CustomResourceItemRepository customResourceItemRepository;
     private final GroupResConfigRepository groupResConfigRepository;
-    private final ResourceInteractionInfoRepository resourceInteractionInfoRepository;
-    private final ResourceUserInteractRecordRepository resourceUserInteractRecordRepository;
+    private final ResourceUserInteractionRecordRepository resourceUserInteractRecordRepository;
+    private final CustomFavoriteCollectionRepository customFavoriteCollectionRepository;
 
     private final IResourceEventPublisher eventPublisher;
     private final MongoTemplate mongoTemplate;
@@ -400,10 +399,8 @@ public class ResourceServiceImpl implements IResourceService {
             }
         }
 
-        // 新增互动信息
-        ResourceInteractionInfoEntity resourceInteractionInfo = resourceInteractionInfoRepository.findById(entity.getResourceId())
-            .orElseGet(ResourceInteractionInfoEntity::new);
-        resp.setResourceInteractionInfo(resourceInteractionInfo);
+        // 互动信息直接读自 ResourceItemEntity.interactionInfo，无需额外查询
+        resp.setResourceInteractionInfo(entity.getInteractionInfo());
         return resp;
     }
 
@@ -475,6 +472,8 @@ public class ResourceServiceImpl implements IResourceService {
                 }
             }
             resp.setCurrentTags(tagMap);
+            // interactionInfo 已内嵌在 ResourceItemEntity，直接读取
+            resp.setResourceInteractionInfo(entity.getInteractionInfo());
 
             MarketOfferInfoResponse offerInfo = null;
             if (entity.getMarketOfferInfo() != null) {
@@ -488,18 +487,6 @@ public class ResourceServiceImpl implements IResourceService {
 
             return resp;
         }).collect(Collectors.toList());
-
-        // 批量聚合互动信息，避免 N+1 查询
-        List<String> resourceIds = entityPage.getContent().stream()
-                .map(ResourceItemEntity::getResourceId)
-                .collect(Collectors.toList());
-        Map<String, ResourceInteractionInfoEntity> interactInfoMap = resourceInteractionInfoRepository.findByResourceIdIn(resourceIds)
-                .stream()
-                .collect(Collectors.toMap(ResourceInteractionInfoEntity::getResourceId, e -> e));
-
-        responses.forEach(resp -> {
-            resp.setResourceInteractionInfo(interactInfoMap.getOrDefault(resp.getResourceId(), new ResourceInteractionInfoEntity()));
-        });
 
         PageR<ResourceItemResponse> pageR = new PageR<>(entityPage.getTotalElements(), page, size);
         pageR.addAll(responses);
@@ -527,8 +514,7 @@ public class ResourceServiceImpl implements IResourceService {
             log.warn("resource item compensated. resourceId={}", entity.getResourceId(), e);
             throw e;
         }
-        // 同步初始化互动信息记录
-        resourceInteractionInfoRepository.save(new ResourceInteractionInfoEntity(entity.getResourceId()));
+        // interactionInfo 已内嵌在 ResourceItemEntity 中，无需单独初始化
         // 同步初始化资源搜索记录
         searchSyncService.syncResourceMetadata(entity, EnumSet.of(UpsertField.RESOURCE_TYPE, UpsertField.RESOURCE_NAME, UpsertField.ACL));
 
@@ -575,8 +561,9 @@ public class ResourceServiceImpl implements IResourceService {
             List<String> deletedResourceIds = expiredResources.stream()
                 .map(ResourceItemEntity::getResourceId)
                 .collect(Collectors.toList());
-            resourceInteractionInfoRepository.deleteAllByResourceIdIn(deletedResourceIds);
             resourceUserInteractRecordRepository.deleteAllByResourceIdIn(deletedResourceIds);
+            // 清理收藏集合中的孤立引用
+            customFavoriteCollectionRepository.removeResourcesFromAllCollections(deletedResourceIds);
 
             log.info("resources deleted. mode=hard count={} resourceIds={}",
                     deletedCount, summarizeIds(resourceIds));

@@ -24,6 +24,9 @@ public interface ResourceValidationMsg {
 
     String FILE_ORG_LOGIC_NOT_NULL = "资源组织模式不能为空";
 
+    // 分页相关校验
+    String SIZE_MAX_INVALID = "每页条数不能超过100";
+
     // 互动相关校验
     String SCORE_RANGE_INVALID = "评分必须在1到5之间";
 
@@ -35,4 +38,8 @@ public interface ResourceValidationMsg {
     String MARKET_PURCHASE_TYPE_NOT_NULL = "购买权益类型不能为空";
 
     String MARKET_OFFER_STATUS_NOT_NULL = "目标状态不能为空";
+
+    // 收藏相关校验
+    String COLLECTION_ID_NOT_BLANK = "收藏集合ID不能为空";
+    String COLLECTION_NAME_NOT_BLANK = "收藏集合名称不能为空";
 }
