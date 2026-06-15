@@ -67,18 +67,36 @@ public class CustomResourceItemRepository {
         if (!isPersonalSpace && userGroupRole != GroupRoleType.ADMIN && userGroupRole != GroupRoleType.OWNER) {
             int discoverCode = ResourceAction.DISCOVER.getCode();
             String aclPrefix = "computedGroupAcls." + groupId;
-            Criteria aclCriteria = new Criteria().orOperator(
-                    // 情况 A: 自己的文件 (免检)
-                    Criteria.where("ownerId").is(userId),
-                    // 情况 B: 资源级的定向用户特权 (包含 DISCOVER)
-                    Criteria.where("specifiedUsersGrantedActionsMask." + userId).bits().allSet(discoverCode),
-                    // 情况 C: 用户被分配了专属掩码，且掩码中包含 DISCOVER
+            Criteria specifiedUserAllowedCriteria =
+                    Criteria.where("specifiedUsersGrantedActionsMask." + userId).bits().allSet(discoverCode);
+            Criteria specifiedUserMissingCriteria =
+                    Criteria.where("specifiedUsersGrantedActionsMask." + userId).exists(false);
+            Criteria overrideAllowsDiscoverCriteria = new Criteria().orOperator(
+                    Criteria.where("overrideGrantedActionsMask").exists(false),
+                    Criteria.where("overrideGrantedActionsMask").is(null),
+                    Criteria.where("overrideGrantedActionsMask").bits().allSet(discoverCode)
+            );
+            Criteria groupAclAllowsDiscoverCriteria = new Criteria().orOperator(
+                    // 用户被分配了专属掩码，且掩码中包含 DISCOVER
                     Criteria.where(aclPrefix + ".userMasks." + userId).bits().allSet(discoverCode),
-                    // 情况 D: 用户没有专属掩码，检查该组的 baseMask 是否包含 DISCOVER
+                    // 用户没有专属掩码，检查该组的 baseMask 是否包含 DISCOVER
                     new Criteria().andOperator(
                             Criteria.where(aclPrefix + ".userMasks." + userId).exists(false),
                             Criteria.where(aclPrefix + ".baseMask").bits().allSet(discoverCode)
                     )
+            );
+            Criteria groupAclBranchCriteria = new Criteria().andOperator(
+                    specifiedUserMissingCriteria,
+                    overrideAllowsDiscoverCriteria,
+                    groupAclAllowsDiscoverCriteria
+            );
+            Criteria aclCriteria = new Criteria().orOperator(
+                    // 情况 A: 自己的文件 (免检)
+                    Criteria.where("ownerId").is(userId),
+                    // 情况 B: 资源级的定向用户特权优先裁决
+                    specifiedUserAllowedCriteria,
+                    // 情况 C: 无定向用户特权时，按 group ACL 与 override 共同裁决
+                    groupAclBranchCriteria
             );
             allCriteria.add(aclCriteria);
         }
@@ -107,6 +125,11 @@ public class CustomResourceItemRepository {
     /** 更新收藏数 */
     public void updateFavoriteCount(String resourceId, int delta) {
         updateInteractionField(resourceId, "interactionInfo.favoriteCount", delta);
+    }
+
+    /** 更新评论总数（顶级评论 + 所有回复） */
+    public void updateCommentCount(String resourceId, int delta) {
+        updateInteractionField(resourceId, "interactionInfo.commentCount", delta);
     }
 
     public void updateFavoriteCount(List<String> resourceIds, int delta) {

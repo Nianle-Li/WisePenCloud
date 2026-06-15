@@ -204,8 +204,11 @@ public class TagServiceImpl implements ITagService {
 
         // 更新基本信息和权限策略
         tagUpdateRequest.setIsPath(null); // IsPath始终不允许修改
-        BeanUtil.copyProperties(tagUpdateRequest, entity, CopyOptions.create().ignoreNullValue());
-        entity.setTaggedResourceGrantedActionsMask(ResourceAction.actionsToPermissionCode(tagUpdateRequest.getGrantedActions()));
+        BeanUtil.copyProperties(tagUpdateRequest, entity, CopyOptions.create().ignoreNullValue()); // 非空时更新
+        // 额外处理GrantedActions的Mask转换
+        if (tagUpdateRequest.getGrantedActions() != null) { // 非空时更新
+            entity.setTaggedResourceGrantedActionsMask(ResourceAction.actionsToPermissionCode(tagUpdateRequest.getGrantedActions()));
+        }
 
         tagRepository.save(entity);
 

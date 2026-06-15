@@ -7,12 +7,12 @@ import com.oriole.wisepen.common.core.domain.enums.list.SortDirectionEnum;
 import com.oriole.wisepen.resource.domain.dto.*;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceRenameRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceUpdateActionPermissionRequest;
-import com.oriole.wisepen.resource.domain.dto.req.ResourceUpdateTagsRequest;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.domain.entity.ResourceItemEntity;
 import com.oriole.wisepen.resource.enums.ResourceSortBy;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface IResourceService {
@@ -32,7 +32,7 @@ public interface IResourceService {
     void updateResourceActionPermission(ResourceUpdateActionPermissionRequest req);
 
     PageR<ResourceItemResponse> listResources(String currentUserId,
-                                              String groupId, GroupRoleType userGroupRole,
+                                              String groupId, GroupRoleType userGroupRole, Map<Long, GroupRoleType> groupRoles,
                                               List<String> tagIds, QueryLogicEnum tagQueryLogicMode,
                                               String resourceType, int page, int size,
                                               ResourceSortBy sortBy, SortDirectionEnum sortDir);

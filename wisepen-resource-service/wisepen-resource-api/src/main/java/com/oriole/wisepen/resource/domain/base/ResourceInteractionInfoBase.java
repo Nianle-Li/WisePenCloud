@@ -16,4 +16,5 @@ public class ResourceInteractionInfoBase {
     private Integer scoreCount = 0;      // 评分人数，默认 0
     private Integer scoreTotal = 0;      // 评分总和，默认 0
     private Integer favoriteCount = 0;   // 收藏人数（用户唯一收藏数），默认 0
+    private Integer commentCount = 0;    // 评论总数（顶级评论 + 所有回复），默认 0
 }

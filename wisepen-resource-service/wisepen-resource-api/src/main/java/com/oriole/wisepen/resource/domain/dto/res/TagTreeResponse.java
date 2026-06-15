@@ -1,6 +1,6 @@
 package com.oriole.wisepen.resource.domain.dto.res;
 
-import com.oriole.wisepen.resource.domain.base.TagInfoBase;
+import com.oriole.wisepen.resource.domain.base.TagInfoPermissionBase;
 import com.oriole.wisepen.resource.enums.ResourceAction;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -9,7 +9,7 @@ import java.util.List;
 
 @EqualsAndHashCode(callSuper = true)
 @Data
-public class TagTreeResponse extends TagInfoBase {
+public class TagTreeResponse extends TagInfoPermissionBase {
     private String tagId;
     private String parentId;
     private List<ResourceAction> grantedActions;

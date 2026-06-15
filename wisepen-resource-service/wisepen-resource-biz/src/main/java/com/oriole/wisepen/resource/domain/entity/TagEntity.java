@@ -1,6 +1,6 @@
 package com.oriole.wisepen.resource.domain.entity;
 
-import com.oriole.wisepen.resource.domain.base.TagInfoBase;
+import com.oriole.wisepen.resource.domain.base.TagInfoPermissionBase;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -20,7 +20,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "wisepen_tags")
-public class TagEntity extends TagInfoBase {
+public class TagEntity extends TagInfoPermissionBase {
     @Id
     private String tagId;
     private String parentId;     // 父节点 ID，根节点可设为 "0" 或 null

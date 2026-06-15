@@ -9,5 +9,5 @@ public class FavoriteCollectionDeleteRequest {
     @NotBlank(message = ResourceValidationMsg.COLLECTION_ID_NOT_BLANK)
     private String collectionId;
 
-    private Boolean keepResourcesToDefault;
+    private Boolean keepResourcesToDefault = false;
 }

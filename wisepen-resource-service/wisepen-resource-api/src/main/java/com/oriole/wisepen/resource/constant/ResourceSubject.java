@@ -11,7 +11,8 @@ public enum ResourceSubject implements IBusinessSubject {
     RESOURCE,
     RESOURCE_TAG,
     FILE_ORG_LOGIC,
-    FAVORITE;
+    FAVORITE,
+    COMMENT;
 
     @Override
     public String key() {

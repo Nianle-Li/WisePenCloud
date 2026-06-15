@@ -2,6 +2,7 @@ package com.oriole.wisepen.resource.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import com.oriole.wisepen.common.core.domain.PageR;
+import com.oriole.wisepen.common.core.domain.enums.GroupRoleType;
 import com.oriole.wisepen.common.core.exception.ServiceException;
 import com.oriole.wisepen.resource.domain.dto.req.FavoriteCollectionCreateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.FavoriteCollectionDeleteRequest;
@@ -9,6 +10,7 @@ import com.oriole.wisepen.resource.domain.dto.req.FavoriteCollectionInfoUpdateRe
 import com.oriole.wisepen.resource.domain.dto.req.ResourceFavoriteRequest;
 import com.oriole.wisepen.resource.domain.dto.res.FavoriteCollectionResponse;
 import com.oriole.wisepen.resource.domain.dto.res.FavoriteItemResponse;
+import com.oriole.wisepen.resource.domain.dto.res.ResourceFavoriteStatusResponse;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.domain.entity.FavoriteCollectionEntity;
 import com.oriole.wisepen.resource.domain.entity.FavoriteResourceRef;
@@ -19,6 +21,8 @@ import com.oriole.wisepen.resource.repository.CustomFavoriteCollectionRepository
 import com.oriole.wisepen.resource.repository.FavoriteCollectionRepository;
 import com.oriole.wisepen.resource.repository.FavoriteResourceRefRepository;
 import com.oriole.wisepen.resource.repository.ResourceItemRepository;
+import com.oriole.wisepen.resource.enums.ResourceAction;
+import com.oriole.wisepen.resource.service.assembler.ResourceItemResponseAssembler;
 import com.oriole.wisepen.resource.service.IFavoriteService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,14 +36,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -52,16 +49,12 @@ public class FavoriteServiceImpl implements IFavoriteService {
     private final CustomFavoriteCollectionRepository customFavoriteCollectionRepository;
     private final CustomResourceItemRepository customResourceItemRepository;
     private final ResourceItemRepository resourceItemRepository;
+    private final ResourceItemResponseAssembler resourceItemResponseAssembler;
 
     @Override
     @Transactional
     public void changeResourceFavoriteStatus(ResourceFavoriteRequest request, String userId) {
         String resourceId = request.getResourceId();
-        // 检查资源是否存在
-        ResourceItemEntity targetResource = resourceItemRepository.findById(resourceId)
-                .orElseThrow(() -> new ServiceException(ResourceError.RESOURCE_NOT_FOUND));
-        if (targetResource.getDeletedAt() != null) throw new ServiceException(ResourceError.RESOURCE_NOT_FOUND);
-
         // 取消收藏
         if (Boolean.FALSE.equals(request.getFavorite())) {
             // 查找收藏记录
@@ -70,11 +63,18 @@ public class FavoriteServiceImpl implements IFavoriteService {
                 favoriteResourceRefRepository.delete(ref);
                 // 扣减收藏次数（收藏夹与资源收藏计数）
                 customFavoriteCollectionRepository.updateItemCount(ref.getCollectionIds(), -1);
-                customResourceItemRepository.updateFavoriteCount(resourceId, -1);
+                // 仅资源存在时才扣除计数
+                resourceItemRepository.findById(resourceId).ifPresent(
+                        resource -> customResourceItemRepository.updateFavoriteCount(resource.getResourceId(), -1));
                 log.info("resource favorite removed. resourceId={} userId={}", resourceId, userId);
             });
             return;
         }
+
+        // 检查资源是否存在，资源已被软删除或不存在时不能进行除取消收藏外的其他操作
+        ResourceItemEntity targetResource = resourceItemRepository.findById(resourceId)
+                .orElseThrow(() -> new ServiceException(ResourceError.RESOURCE_NOT_FOUND));
+        if (targetResource.getDeletedAt() != null) throw new ServiceException(ResourceError.RESOURCE_NOT_FOUND);
 
         Set<String> collectionIds = normalizeCollectionIds(request.getCollectionIds());
         // 无收藏夹列表，兜底为默认收藏夹
@@ -217,6 +217,14 @@ public class FavoriteServiceImpl implements IFavoriteService {
     }
 
     @Override
+    public ResourceFavoriteStatusResponse getResourceFavoriteStatus(String resourceId, String userId) {
+        List<String> collectionIds = favoriteResourceRefRepository.findFirstByUserIdAndResourceId(userId, resourceId)
+                .map(ref -> ref.getCollectionIds() != null ? ref.getCollectionIds() : Collections.<String>emptyList())
+                .orElse(Collections.emptyList());
+        return new ResourceFavoriteStatusResponse(collectionIds);
+    }
+
+    @Override
     public List<FavoriteCollectionResponse> listCollections(String userId) {
         getDefaultCollection(userId); // 新建默认收藏夹
         List<FavoriteCollectionEntity> collections =
@@ -225,7 +233,7 @@ public class FavoriteServiceImpl implements IFavoriteService {
     }
 
     @Override
-    public PageR<FavoriteItemResponse> listFavoritedResources(String collectionId, int page, int size, String userId) {
+    public PageR<FavoriteItemResponse> listFavoritedResources(String collectionId, int page, int size, String userId, Map<Long, GroupRoleType> groupRoles) {
         Pageable pageable =  PageRequest.of(page - 1, size, Sort.by(Sort.Order.desc("favoritedAt"), Sort.Order.desc("id")));
         Page<FavoriteResourceRef> refPage;
         if (collectionId != null){
@@ -244,16 +252,22 @@ public class FavoriteServiceImpl implements IFavoriteService {
             resourceItemRepository.findAllById(resourceIds).forEach(entity -> resourceMap.put(entity.getResourceId(), entity));
         }
 
+        // 组装 ResourceItemResponse（过滤无 ResourceAction.DISCOVER 权限的）
+        Map<String, ResourceItemResponse> responseMap = resourceItemResponseAssembler
+                .assembleMany(resourceMap.values().stream().toList(), userId, groupRoles, List.of(ResourceAction.DISCOVER))
+                .stream().collect(Collectors.toMap(ResourceItemResponse::getResourceId, response -> response));
+
         List<FavoriteItemResponse> responses = refPage.getContent().stream()
                 .map(ref -> {
                     FavoriteItemResponse favoriteItemResponse = BeanUtil.copyProperties(ref, FavoriteItemResponse.class);
                     ResourceItemEntity resourceItemEntity = resourceMap.get(ref.getResourceId());
-                    if (resourceItemEntity == null || resourceItemEntity.getDeletedAt() != null) {
+                    ResourceItemResponse resourceInfo = responseMap.get(ref.getResourceId());
+                    if (resourceItemEntity == null || resourceItemEntity.getDeletedAt() != null || resourceInfo == null) {
                         favoriteItemResponse.setAccessible(false);
                         return favoriteItemResponse;
                     }
                     favoriteItemResponse.setAccessible(true);
-                    favoriteItemResponse.setResourceInfo(BeanUtil.copyProperties(resourceItemEntity, ResourceItemResponse.class));
+                    favoriteItemResponse.setResourceInfo(resourceInfo);
                     return favoriteItemResponse;
                 }).toList();
 

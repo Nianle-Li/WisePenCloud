@@ -7,6 +7,7 @@ import java.util.List;
 
 @Data
 public class FavoriteItemResponse {
+    private String resourceId;
     private ResourceItemResponse resourceInfo;
     private LocalDateTime favoritedAt;
     private List<String> collectionIds;
