@@ -5,12 +5,9 @@ import com.oriole.wisepen.common.core.domain.IBusinessSubject;
 import java.util.Locale;
 
 public enum AIAssetSubject implements IBusinessSubject {
-    SKILL,
-    SKILL_VERSION,
-    SKILL_ASSET,
-    AGENT,
-    AGENT_VERSION,
-    AGENT_ASSET;
+    AI_RESOURCE,
+    AI_RESOURCE_VERSION,
+    AI_RESOURCE_ASSET;
 
     @Override
     public String key() {

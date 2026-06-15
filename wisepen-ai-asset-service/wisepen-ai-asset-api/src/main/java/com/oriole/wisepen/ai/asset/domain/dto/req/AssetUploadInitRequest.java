@@ -22,6 +22,7 @@ public class AssetUploadInitRequest {
     @NotBlank(message = AIAssetValidationMsg.RESOURCE_ID_NOT_BLANK)
     private String resourceId;
 
+    @NotNull(message = AIAssetValidationMsg.VERSION_NOT_BLANK)
     private Integer draftVersion;
 
     @Valid

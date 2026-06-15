@@ -1,6 +1,6 @@
 package com.oriole.wisepen.ai.asset.domain.entity;
 
-import com.oriole.wisepen.ai.asset.domain.base.SkillInfoBase;
+import com.oriole.wisepen.ai.asset.domain.base.AIResourceInfoBase;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -18,13 +18,5 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 @Document(collection = "wisepen_skill_items")
-public class SkillEntity extends SkillInfoBase {
-    @Id
-    private String resourceId;
-
-    @CreatedDate
-    private LocalDateTime createTime;
-
-    @LastModifiedDate
-    private LocalDateTime updateTime;
+public class SkillEntity extends AIResourceBaseEntity<SkillEntity> {
 }

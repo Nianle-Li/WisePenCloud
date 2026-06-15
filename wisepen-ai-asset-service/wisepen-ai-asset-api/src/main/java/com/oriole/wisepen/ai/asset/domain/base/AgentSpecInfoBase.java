@@ -7,9 +7,6 @@ import lombok.NoArgsConstructor;
 
 import java.util.Set;
 
-/**
- * Agent 运行配置，对齐 py 端 chat-service agents/models.py 的 AgentSpec
- */
 @Data
 @Builder
 @NoArgsConstructor

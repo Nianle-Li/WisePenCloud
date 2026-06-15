@@ -23,7 +23,4 @@ public class VersionBundleBase {
 
     @Default
     private List<AssetInfoBase> assets = new ArrayList<>();
-
-    // agent 运行配置；skill 不使用，恒为 null
-    private AgentSpecInfoBase spec;
 }

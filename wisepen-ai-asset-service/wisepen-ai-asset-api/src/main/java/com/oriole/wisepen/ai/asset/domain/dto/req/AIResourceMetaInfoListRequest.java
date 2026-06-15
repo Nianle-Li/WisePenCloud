@@ -6,6 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Data
-public class SkillMetaInfoListRequest {
+public class AIResourceMetaInfoListRequest {
     private List<String> resourceIds = new ArrayList<>();
 }

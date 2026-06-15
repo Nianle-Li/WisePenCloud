@@ -8,7 +8,7 @@ import lombok.experimental.SuperBuilder;
 @Data
 @SuperBuilder
 @NoArgsConstructor
-public class SkillInfoBase {
+public class AIResourceInfoBase {
     private String name;
     private String description;
     private Integer version;

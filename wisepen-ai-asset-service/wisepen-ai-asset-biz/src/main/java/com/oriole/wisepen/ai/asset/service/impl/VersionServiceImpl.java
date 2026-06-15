@@ -6,16 +6,22 @@ import com.oriole.wisepen.ai.asset.domain.base.AssetInfoBase;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AssetDeleteRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AssetUploadInitRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.res.AssetUploadInitResponse;
-import com.oriole.wisepen.ai.asset.domain.entity.BaseVersionBundleEntity;
+import com.oriole.wisepen.ai.asset.domain.entity.AIResourceBaseEntity;
+import com.oriole.wisepen.ai.asset.domain.entity.SkillEntity;
+import com.oriole.wisepen.ai.asset.domain.entity.VersionBundleBaseEntity;
 import com.oriole.wisepen.ai.asset.enums.AssetUploadStatus;
 import com.oriole.wisepen.ai.asset.enums.AssetResourceType;
 import com.oriole.wisepen.ai.asset.enums.VersionStatus;
+import com.oriole.wisepen.ai.asset.exception.AIResourceError;
 import com.oriole.wisepen.ai.asset.mq.AIAssetEventPublisher;
+import com.oriole.wisepen.ai.asset.repository.AIResourceBaseRepository;
+import com.oriole.wisepen.ai.asset.repository.VersionBundleBaseRepository;
 import com.oriole.wisepen.ai.asset.service.IVersionService;
 import com.oriole.wisepen.common.core.exception.ServiceException;
 import com.oriole.wisepen.file.storage.api.domain.dto.UploadInitReqDTO;
 import com.oriole.wisepen.file.storage.api.domain.dto.UploadInitRespDTO;
 import com.oriole.wisepen.file.storage.api.domain.mq.FileUploadedMessage;
+import com.oriole.wisepen.file.storage.api.enums.StorageSceneEnum;
 import com.oriole.wisepen.file.storage.api.feign.RemoteStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,51 +30,50 @@ import org.springframework.util.StringUtils;
 
 import java.util.*;
 
-/**
- * skill / agent 共用的版本生命周期实现，差异通过 VersionServiceProfile 注入，不加 @Service 由配置类装配两份
- */
 @Slf4j
 @RequiredArgsConstructor
-public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IVersionService<T> {
+public abstract class VersionServiceImpl<VT extends VersionBundleBaseEntity<VT>, AT extends AIResourceBaseEntity<AT>> implements IVersionService<VT> {
 
     private static final String ROOT_PATH = "/";
 
-    private final VersionServiceProfile<T> profile;
+    private final VersionBundleBaseRepository<VT> versionBundleBaseRepository;
+    private final AIResourceBaseRepository<AT> aiResourceBaseRepository;
     private final RemoteStorageService remoteStorageService;
     private final AIAssetEventPublisher eventPublisher;
 
+    protected abstract VT buildDraft(String resourceId, Integer draftVersion);
+
+    protected abstract StorageSceneEnum getStorageScene();
+
     @Override
-    public void createDraft(String resourceId, Integer draftVersion) {
-        T draft = profile.getDraftFactory().get();
-        draft.setResourceId(resourceId);
-        draft.setVersion(draftVersion);
-        draft.setStatus(VersionStatus.DRAFT);
-        draft.setAssets(new ArrayList<>());
-        // 如果不是首份草案(1)需要复制此前的资源列表与运行配置
+    public void createDraftVersion(String resourceId, Integer draftVersion) {
+        VT draft = buildDraft(resourceId, draftVersion);
+        // 如果不是首份草案(1)需要复制此前的资源列表
         if (draftVersion > 1) {
-            profile.getRepository().findByResourceIdAndVersion(resourceId, draftVersion - 1).ifPresent(current -> {
-                draft.setAssets(current.getAssets());
-                draft.setSpec(current.getSpec());
-            });
+            versionBundleBaseRepository.findByResourceIdAndVersion(resourceId, draftVersion - 1).ifPresent(draft::copyBy);
         }
-        profile.getRepository().save(draft);
+        versionBundleBaseRepository.save(draft);
     }
 
     @Override
-    public T getBundle(String resourceId, Integer version) {
+    public VT getVersionBundle(String resourceId, Integer version) {
         // 如果未指定版本号则使用当前发布的版本号
-        if (version == null) version = profile.getPublishedVersionLoader().apply(resourceId);
-        return profile.getRepository().findByResourceIdAndVersion(resourceId, version)
-                .orElseThrow(() -> new ServiceException(profile.getVersionNotFound()));
+        if (version == null){
+            AT entity = aiResourceBaseRepository.findByResourceId(resourceId)
+                    .orElseThrow(() -> new ServiceException(AIResourceError.AI_RESOURCE_NOT_FOUND));
+            version = entity.getVersion();
+        }
+        return versionBundleBaseRepository.findByResourceIdAndVersion(resourceId, version)
+                .orElseThrow(() -> new ServiceException(AIResourceError.AI_RESOURCE_VERSION_NOT_FOUND));
     }
 
     @Override
     @Transactional
     public AssetUploadInitResponse initUploadAssets(AssetUploadInitRequest req) {
         // 检查当前是否是草案版本
-        T draft = profile.getRepository().findByResourceIdAndVersion(req.getResourceId(), req.getDraftVersion())
-                .orElseThrow(() -> new ServiceException(profile.getVersionNotFound()));
-        if (draft.getStatus() != VersionStatus.DRAFT) throw new ServiceException(profile.getNonDraft());
+        VT draft = versionBundleBaseRepository.findByResourceIdAndVersion(req.getResourceId(), req.getDraftVersion())
+                .orElseThrow(() -> new ServiceException(AIResourceError.AI_RESOURCE_NOT_FOUND));
+        if (draft.getStatus() != VersionStatus.DRAFT) throw new ServiceException(AIResourceError.CANNOT_OPERATE_NON_DRAFT_AI_RESOURCE_VERSION);
 
         Set<String> replacedObjectKeys = new HashSet<>();
 
@@ -90,14 +95,13 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
                 uploadInitRespDTO = remoteStorageService.initUpload(UploadInitReqDTO.builder()
                         .md5(assetReq.getMd5())
                         .extension(assetReq.getAssetResourceType().getExtension())
-                        .scene(profile.getScene())
+                        .scene(getStorageScene())
                         .bizTag(req.getResourceId())
                         .expectedSize(assetReq.getExpectedSize())
                         .build()).getData();
             } catch (Exception e) {
-                log.warn("{} asset upload init failed. resourceId={} version={} dependency=storageService",
-                        profile.getLogTag(), req.getResourceId(), req.getDraftVersion(), e);
-                throw new ServiceException(profile.getUploadApplyFailed(), e.getMessage());
+                log.warn("AI resource asset upload init failed. resourceId={} version={} dependency=storageService", req.getResourceId(), req.getDraftVersion(), e);
+                throw new ServiceException(AIResourceError.AI_RESOURCE_ASSET_UPLOAD_URL_APPLY_FAILED, e.getMessage());
             }
 
             asset.setObjectKey(uploadInitRespDTO.getObjectKey());
@@ -115,7 +119,7 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
             if (StringUtils.hasText(oldObjectKey)) replacedObjectKeys.add(oldObjectKey);
         }
 
-        profile.getRepository().save(draft);
+        versionBundleBaseRepository.save(draft);
         deleteUnreferencedObjectKeys(req.getResourceId(), replacedObjectKeys);
         return response;
     }
@@ -124,18 +128,18 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
         if (path == null || path.isBlank() || !path.startsWith("/") || path.contains("\\")
                 || path.contains("//") || path.contains("/../") || path.endsWith("/..")
                 || (!ROOT_PATH.equals(path) && path.endsWith("/"))) {
-            throw new ServiceException(profile.getPathInvalid());
+            throw new ServiceException(AIResourceError.AI_RESOURCE_ASSET_PATH_INVALID);
         }
     }
 
     private void validateFileName(String name) {
         if (name == null || name.isBlank() || name.contains("/") || name.contains("\\")
                 || ".".equals(name) || "..".equals(name)) {
-            throw new ServiceException(profile.getPathInvalid());
+            throw new ServiceException(AIResourceError.AI_RESOURCE_ASSET_PATH_INVALID);
         }
     }
 
-    private AssetInfoBase findOrCreateDraftAsset(T draft, String path, String name, AssetResourceType assetResourceType) {
+    private AssetInfoBase findOrCreateDraftAsset(VT draft, String path, String name, AssetResourceType assetResourceType) {
         if (draft.getAssets() == null) draft.setAssets(new ArrayList<>());
         AssetInfoBase asset = draft.getAssets().stream()
                 .filter(item -> path.equals(item.getPath()) && name.equals(item.getName()))
@@ -153,9 +157,9 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
     @Override
     public void deleteAssets(AssetDeleteRequest req) {
         // 检查是否是草案版本
-        T draft = profile.getRepository().findByResourceIdAndVersion(req.getResourceId(), req.getDraftVersion())
-                .orElseThrow(() -> new ServiceException(profile.getVersionNotFound()));
-        if (draft.getStatus() != VersionStatus.DRAFT) throw new ServiceException(profile.getNonDraft());
+        VT draft = versionBundleBaseRepository.findByResourceIdAndVersion(req.getResourceId(), req.getDraftVersion())
+                .orElseThrow(() -> new ServiceException(AIResourceError.AI_RESOURCE_VERSION_NOT_FOUND));
+        if (draft.getStatus() != VersionStatus.DRAFT) throw new ServiceException(AIResourceError.CANNOT_OPERATE_NON_DRAFT_AI_RESOURCE_VERSION);
 
         Set<String> removedObjectKeys = new HashSet<>();
 
@@ -170,7 +174,7 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
             }
         }
 
-        profile.getRepository().save(draft);
+        versionBundleBaseRepository.save(draft);
         deleteUnreferencedObjectKeys(req.getResourceId(), removedObjectKeys);
     }
 
@@ -178,12 +182,13 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
         if (objectKeys.isEmpty()) return;
 
         Set<String> referencedObjectKeys = new HashSet<>();
-        profile.getRepository().findByResourceId(resourceId).forEach(version -> {
+        versionBundleBaseRepository.findByResourceId(resourceId).forEach(version -> {
             if (version.getAssets() != null) version.getAssets().forEach(asset ->
                     referencedObjectKeys.add(asset.getObjectKey()));
         });
 
         List<String> deletableObjectKeys = objectKeys.stream()
+                .filter(StringUtils::hasText)
                 .filter(objectKey -> !referencedObjectKeys.contains(objectKey))
                 .toList();
 
@@ -193,23 +198,26 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
     @Override
     @Transactional
     public void publishVersion(String resourceId) {
-        int draftVersion = profile.getPublishedVersionLoader().apply(resourceId) + 1;
+        AT resourceEntity = aiResourceBaseRepository.findByResourceId(resourceId)
+                .orElseThrow(() -> new ServiceException(AIResourceError.AI_RESOURCE_NOT_FOUND));
+
+        int draftVersion = resourceEntity.getVersion() + 1;
         // 检查当否是草案版本
-        T draft = profile.getRepository().findByResourceIdAndVersion(resourceId, draftVersion)
-                .orElseThrow(() -> new ServiceException(profile.getVersionNotFound()));
-        if (draft.getStatus() != VersionStatus.DRAFT) throw new ServiceException(profile.getNonDraft());
-        // 类型相关的核心校验（skill 核心文件 / agent spec）下沉到实体
-        draft.checkReadyToPublish();
+        VT draft = versionBundleBaseRepository.findByResourceIdAndVersion(resourceId, draftVersion)
+                .orElseThrow(() -> new ServiceException(AIResourceError.AI_RESOURCE_VERSION_NOT_FOUND));
+        if (draft.getStatus() != VersionStatus.DRAFT) throw new ServiceException(AIResourceError.CANNOT_OPERATE_NON_DRAFT_AI_RESOURCE_VERSION);
+        // 核心资源缺失校验
+        draft.checkCoreAssetReady();
         // 资源未就绪（有上传中的资源）
         if (draft.getAssets() != null && draft.getAssets().stream().anyMatch(this::isAssetUnavailable)) {
-            throw new ServiceException(profile.getAssetNotReady());
+            throw new ServiceException(AIResourceError.AI_RESOURCE_ASSET_NOT_READY);
         }
         draft.setStatus(VersionStatus.PUBLISHED);
-        profile.getPublishedVersionUpdater().accept(resourceId, draftVersion);
-        profile.getRepository().save(draft);
+        aiResourceBaseRepository.updateVersionByResourceId(resourceId, draftVersion);
+        versionBundleBaseRepository.save(draft);
 
         // 新草案是 version + 1，直接新建
-        createDraft(resourceId, draftVersion + 1);
+        createDraftVersion(resourceId, draftVersion + 1);
     }
 
     private boolean isAssetUnavailable(AssetInfoBase asset) {
@@ -220,11 +228,15 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
 
     @Override
     public void handleFileUploaded(FileUploadedMessage msg) {
-        T versionBundle = profile.getRepository().findFirstByAssetObjectKey(msg.getObjectKey()).orElse(null);
+        if (msg.getScene() != getStorageScene()){
+            return;
+        }
+
+        VT versionBundle = versionBundleBaseRepository.findFirstByAssetObjectKey(msg.getObjectKey()).orElse(null);
         if (versionBundle == null) {
             // 未找到对应的版本，删除文件
             eventPublisher.publishFileDeleteEvent(List.of(msg.getObjectKey()));
-            log.warn("{} asset upload compensated for missing version. objectKey={}", profile.getLogTag(), msg.getObjectKey());
+            log.warn("AI resource asset upload compensated for missing version. objectKey={}", msg.getObjectKey());
             return;
         }
         // 能按 objectKey 查到版本，资产列表中必然有对应项
@@ -237,10 +249,10 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
 
         asset.setSize(msg.getSize());
         asset.setUploadStatus(AssetUploadStatus.AVAILABLE);
-        profile.getRepository().save(versionBundle);
+        versionBundleBaseRepository.save(versionBundle);
 
-        log.info("{} asset upload handled. resourceId={} version={} assetId={} objectKey={}",
-                profile.getLogTag(), versionBundle.getResourceId(), versionBundle.getVersion(), asset.getId(), msg.getObjectKey());
+        log.info("AI resource asset upload handled. resourceId={} version={} assetId={} objectKey={}",
+                versionBundle.getResourceId(), versionBundle.getVersion(), asset.getId(), msg.getObjectKey());
     }
 
     @Override
@@ -248,14 +260,14 @@ public class VersionServiceImpl<T extends BaseVersionBundleEntity> implements IV
     public void deleteAllVersionsByResourceIds(List<String> resourceIds) {
         Set<String> objectKeys = new HashSet<>();
         for (String resourceId : resourceIds) {
-            List<T> versionBundles = profile.getRepository().findByResourceId(resourceId);
+            List<VT> versionBundles = versionBundleBaseRepository.findByResourceId(resourceId);
             if (versionBundles.isEmpty()) continue;
             versionBundles.forEach(versionBundle -> {
                 if (versionBundle.getAssets() != null) versionBundle.getAssets().forEach(asset ->
                         objectKeys.add(asset.getObjectKey()));
             });
         }
-        profile.getRepository().deleteByResourceIdIn(resourceIds);
-        eventPublisher.publishFileDeleteEvent(objectKeys.stream().toList());
+        versionBundleBaseRepository.deleteByResourceIdIn(resourceIds);
+        eventPublisher.publishFileDeleteEvent(objectKeys.stream().filter(StringUtils::hasText).toList());
     }
 }

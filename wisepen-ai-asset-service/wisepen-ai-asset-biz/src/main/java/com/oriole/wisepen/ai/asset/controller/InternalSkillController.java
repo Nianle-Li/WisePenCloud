@@ -1,15 +1,16 @@
 package com.oriole.wisepen.ai.asset.controller;
 
 import cn.hutool.core.bean.BeanUtil;
-import com.oriole.wisepen.ai.asset.domain.base.SkillInfoBase;
-import com.oriole.wisepen.ai.asset.domain.dto.req.SkillMetaInfoListRequest;
+import com.oriole.wisepen.ai.asset.domain.base.AIResourceInfoBase;
+import com.oriole.wisepen.ai.asset.domain.dto.req.AIResourceMetaInfoListRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.res.SkillInfoResponse;
-import com.oriole.wisepen.ai.asset.domain.dto.res.SkillMetaInfoResponse;
+import com.oriole.wisepen.ai.asset.domain.dto.res.AIResourceMetaInfoResponse;
 import com.oriole.wisepen.ai.asset.domain.dto.res.SkillVersionBundleInfoResponse;
 import com.oriole.wisepen.ai.asset.domain.entity.SkillVersionBundleEntity;
-import com.oriole.wisepen.ai.asset.exception.SkillError;
-import com.oriole.wisepen.ai.asset.service.ISkillService;
-import com.oriole.wisepen.ai.asset.service.IVersionService;
+import com.oriole.wisepen.ai.asset.exception.AIResourceError;
+import com.oriole.wisepen.ai.asset.service.IAIResourceService;
+import com.oriole.wisepen.ai.asset.service.impl.SkillServiceImpl;
+import com.oriole.wisepen.ai.asset.service.impl.SkillVersionServiceImpl;
 import com.oriole.wisepen.common.core.domain.R;
 import com.oriole.wisepen.common.core.exception.ServiceException;
 import lombok.RequiredArgsConstructor;
@@ -28,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class InternalSkillController {
 
-    private final ISkillService skillService;
-    private final IVersionService<SkillVersionBundleEntity> skillVersionService;
+    private final SkillServiceImpl skillService;
+    private final SkillVersionServiceImpl skillVersionService;
 
     @GetMapping("/getSkillByResourceId")
     public R<SkillInfoResponse> getPublishedSkillByResourceId(@RequestParam String resourceId, @RequestParam(required = false) Integer skillVersion) {
-        SkillInfoBase skill = skillService.getSkillInfo(resourceId);
+        AIResourceInfoBase skill = skillService.getAIResourceInfo(resourceId);
         if (skillVersion == null) skillVersion = skill.getVersion();
         if (skillVersion <= 0) {
-            throw new ServiceException(SkillError.SKILL_VERSION_NOT_FOUND);
+            throw new ServiceException(AIResourceError.AI_RESOURCE_VERSION_NOT_FOUND);
         }
         SkillInfoResponse response = BeanUtil.copyProperties(skill, SkillInfoResponse.class);
-        SkillVersionBundleEntity bundle = skillVersionService.getBundle(resourceId, skillVersion);
+        SkillVersionBundleEntity bundle = skillVersionService.getVersionBundle(resourceId, skillVersion);
         response.setSkillVersionBundle(BeanUtil.copyProperties(bundle, SkillVersionBundleInfoResponse.class));
         return R.ok(response);
     }
 
     @PostMapping("/listPublishedSkillsMetaByResourceIds")
-    public R<List<SkillMetaInfoResponse>> listPublishedSkillMetasByResourceIds(@RequestBody SkillMetaInfoListRequest request) {
-        return R.ok(skillService.listPublishedSkillsMeta(request == null ? null : request.getResourceIds()));
+    public R<List<AIResourceMetaInfoResponse>> listPublishedSkillMetasByResourceIds(@RequestBody AIResourceMetaInfoListRequest request) {
+        return R.ok(skillService.listPublishedAIResourcesMeta(request == null ? null : request.getResourceIds()));
     }
 }

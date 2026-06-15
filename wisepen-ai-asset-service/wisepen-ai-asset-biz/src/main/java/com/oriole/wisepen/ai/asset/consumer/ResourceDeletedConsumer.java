@@ -1,8 +1,9 @@
 package com.oriole.wisepen.ai.asset.consumer;
 
+import com.oriole.wisepen.ai.asset.service.impl.SkillServiceImpl;
 import com.oriole.wisepen.resource.domain.mq.ResourceDeletedMessage;
 import com.oriole.wisepen.resource.enums.ResourceType;
-import com.oriole.wisepen.ai.asset.service.ISkillService;
+import com.oriole.wisepen.ai.asset.service.IAIResourceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -19,7 +20,7 @@ import static com.oriole.wisepen.resource.constant.MqTopicConstants.TOPIC_RESOUR
 @RequiredArgsConstructor
 public class ResourceDeletedConsumer {
 
-    private final ISkillService skillService;
+    private final SkillServiceImpl skillService;
 
     @KafkaListener(topics = TOPIC_RESOURCE_PHYSICAL_DESTROY, groupId = "wisepen-skill-resource-destroy-group")
     public void onResourceDeleted(ResourceDeletedMessage message) {
@@ -30,7 +31,7 @@ public class ResourceDeletedConsumer {
                 TOPIC_RESOURCE_PHYSICAL_DESTROY, count, summarizeIds(skillIds));
         if (count > 0) {
             try {
-                skillService.deleteSkills(skillIds);
+                skillService.deleteAIResources(skillIds);
                 log.debug("skill resource delete event consumed. topic={} count={} skillIds={}",
                         TOPIC_RESOURCE_PHYSICAL_DESTROY, count, summarizeIds(skillIds));
             } catch (Exception e) {

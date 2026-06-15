@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SkillCreateRequest {
+public class AIResourceCreateRequest {
     @NotBlank(message = AIAssetValidationMsg.TITLE_NOT_BLANK)
     private String title;
 

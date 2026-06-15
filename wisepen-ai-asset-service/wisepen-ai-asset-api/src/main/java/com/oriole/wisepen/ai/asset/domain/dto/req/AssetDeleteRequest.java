@@ -4,6 +4,7 @@ import com.oriole.wisepen.ai.asset.constant.AIAssetValidationMsg;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -19,7 +20,7 @@ import java.util.List;
 public class AssetDeleteRequest {
     @NotBlank(message = AIAssetValidationMsg.RESOURCE_ID_NOT_BLANK)
     private String resourceId;
-
+    @NotNull(message = AIAssetValidationMsg.VERSION_NOT_BLANK)
     private Integer draftVersion;
 
     @Valid

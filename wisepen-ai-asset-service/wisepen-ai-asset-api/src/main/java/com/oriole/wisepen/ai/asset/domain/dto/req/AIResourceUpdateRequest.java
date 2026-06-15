@@ -13,7 +13,7 @@ import org.springframework.util.StringUtils;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SkillUpdateRequest {
+public class AIResourceUpdateRequest {
     private String resourceId;
 
     private String name;

@@ -1,19 +1,19 @@
 package com.oriole.wisepen.ai.asset.controller;
 
 import cn.hutool.core.bean.BeanUtil;
-import com.oriole.wisepen.ai.asset.domain.base.SkillInfoBase;
+import com.oriole.wisepen.ai.asset.domain.base.AIResourceInfoBase;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AssetDeleteRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AssetUploadInitRequest;
-import com.oriole.wisepen.ai.asset.domain.dto.req.SkillCreateRequest;
-import com.oriole.wisepen.ai.asset.domain.dto.req.SkillUpdateRequest;
-import com.oriole.wisepen.ai.asset.domain.dto.req.SkillVersionPublishRequest;
+import com.oriole.wisepen.ai.asset.domain.dto.req.AIResourceCreateRequest;
+import com.oriole.wisepen.ai.asset.domain.dto.req.AIResourceUpdateRequest;
+import com.oriole.wisepen.ai.asset.domain.dto.req.AIResourceVersionPublishRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.res.AssetUploadInitResponse;
 import com.oriole.wisepen.ai.asset.domain.dto.res.SkillResourceInfoResponse;
 import com.oriole.wisepen.ai.asset.domain.dto.res.SkillVersionBundleInfoResponse;
 import com.oriole.wisepen.ai.asset.domain.entity.SkillVersionBundleEntity;
-import com.oriole.wisepen.ai.asset.exception.SkillError;
-import com.oriole.wisepen.ai.asset.service.ISkillService;
-import com.oriole.wisepen.ai.asset.service.IVersionService;
+import com.oriole.wisepen.ai.asset.exception.AIResourceError;
+import com.oriole.wisepen.ai.asset.service.impl.SkillServiceImpl;
+import com.oriole.wisepen.ai.asset.service.impl.SkillVersionServiceImpl;
 import com.oriole.wisepen.common.core.context.SecurityContextHolder;
 import com.oriole.wisepen.common.core.domain.R;
 import com.oriole.wisepen.common.core.domain.enums.BusinessType;
@@ -43,8 +43,8 @@ import org.springframework.web.bind.annotation.RestController;
 @CheckLogin
 public class SkillController {
 
-    private final ISkillService skillService;
-    private final IVersionService<SkillVersionBundleEntity> skillVersionService;
+    private final SkillServiceImpl skillService;
+    private final SkillVersionServiceImpl skillVersionService;
     private final RemoteResourceService remoteResourceService;
 
     @Operation(
@@ -60,9 +60,9 @@ public class SkillController {
     )
     @Log(title = "创建 Skill", businessType = BusinessType.INSERT)
     @PostMapping("/createSkill")
-    public R<String> createSkill(@Validated @RequestBody SkillCreateRequest request) {
+    public R<String> createSkill(@Validated @RequestBody AIResourceCreateRequest request) {
         String userId = SecurityContextHolder.getUserId().toString();
-        String resourceId = skillService.createSkill(request, userId);
+        String resourceId = skillService.createAIResource(request, userId);
         return R.ok(resourceId);
     }
 
@@ -79,9 +79,9 @@ public class SkillController {
     )
     @Log(title = "更新 Skill 信息", businessType = BusinessType.UPDATE)
     @PostMapping("/changeSkillInfo")
-    public R<Void> updateSkillInfo(@Validated @RequestBody SkillUpdateRequest request) {
+    public R<Void> updateSkillInfo(@Validated @RequestBody AIResourceUpdateRequest request) {
         assertSkillOwner(request.getResourceId());
-        skillService.updateSkill(request);
+        skillService.updateAIResourceInfo(request);
         return R.ok();
     }
 
@@ -102,7 +102,7 @@ public class SkillController {
         ResourceItemResponse resourceInfo = remoteResourceService.getResourceInfo(new ResourceInfoGetReqDTO(
                 resourceId, SecurityContextHolder.getUserId(), SecurityContextHolder.getGroupRoleMap()
         )).getData();
-        SkillInfoBase skillInfo = skillService.getSkillInfo(resourceId);
+        AIResourceInfoBase skillInfo = skillService.getAIResourceInfo(resourceId);
         SkillResourceInfoResponse skillResourceInfoResponse = SkillResourceInfoResponse.builder().resourceInfo(resourceInfo).skillInfo(skillInfo).build();
         return R.ok(skillResourceInfoResponse);
     }
@@ -121,7 +121,7 @@ public class SkillController {
     @PostMapping("/getSkillVersionBundleInfo")
     public R<SkillVersionBundleInfoResponse> getSkillVersionBundleInfo(@RequestParam String resourceId, Integer version) {
         assertSkillOwner(resourceId);
-        SkillVersionBundleEntity bundle = skillVersionService.getBundle(resourceId, version);
+        SkillVersionBundleEntity bundle = skillVersionService.getVersionBundle(resourceId, version);
         return R.ok(BeanUtil.copyProperties(bundle, SkillVersionBundleInfoResponse.class));
     }
 
@@ -138,7 +138,7 @@ public class SkillController {
     )
     @Log(title = "发布 Skill 版本", businessType = BusinessType.UPDATE)
     @PostMapping("/publishSkillVersion")
-    public R<Void> publishSkillVersion(@Validated @RequestBody SkillVersionPublishRequest request) {
+    public R<Void> publishSkillVersion(@Validated @RequestBody AIResourceVersionPublishRequest request) {
         assertSkillOwner(request.getResourceId());
         skillVersionService.publishVersion(request.getResourceId());
         return R.ok();
@@ -189,7 +189,7 @@ public class SkillController {
                 .groupRoles(SecurityContextHolder.getGroupRoleMap())
                 .build()).getData();
         if (permission == null || permission.getResourceAccessRole() != ResourceAccessRole.OWNER) {
-            throw new ServiceException(SkillError.SKILL_PERMISSION_DENIED);
+            throw new ServiceException(AIResourceError.AI_RESOURCE_PERMISSION_DENIED);
         }
     }
 }
