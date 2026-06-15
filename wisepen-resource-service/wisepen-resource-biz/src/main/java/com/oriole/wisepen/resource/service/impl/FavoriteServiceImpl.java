@@ -10,6 +10,7 @@ import com.oriole.wisepen.resource.domain.dto.req.FavoriteCollectionInfoUpdateRe
 import com.oriole.wisepen.resource.domain.dto.req.ResourceFavoriteRequest;
 import com.oriole.wisepen.resource.domain.dto.res.FavoriteCollectionResponse;
 import com.oriole.wisepen.resource.domain.dto.res.FavoriteItemResponse;
+import com.oriole.wisepen.resource.domain.dto.res.ResourceFavoriteStatusResponse;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.domain.entity.FavoriteCollectionEntity;
 import com.oriole.wisepen.resource.domain.entity.FavoriteResourceRef;
@@ -213,6 +214,16 @@ public class FavoriteServiceImpl implements IFavoriteService {
 
         log.info("favorite collection deleted. collectionId={} userId={} affectedRefCount={}",
                 request.getCollectionId(), userId, affectedRefs.size());
+    }
+
+    @Override
+    public ResourceFavoriteStatusResponse getResourceFavoriteStatus(String resourceId, String userId) {
+        List<String> collectionIds = favoriteResourceRefRepository.findFirstByUserIdAndResourceId(userId, resourceId)
+                .map(ref -> ref.getCollectionIds() != null ? ref.getCollectionIds() : Collections.<String>emptyList())
+                .orElse(Collections.emptyList());
+        ResourceFavoriteStatusResponse resp = new ResourceFavoriteStatusResponse();
+        resp.setCollectionIds(collectionIds);
+        return resp;
     }
 
     @Override

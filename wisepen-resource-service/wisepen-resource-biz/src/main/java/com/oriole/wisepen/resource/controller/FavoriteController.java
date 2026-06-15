@@ -11,11 +11,13 @@ import com.oriole.wisepen.resource.constant.ResourceValidationMsg;
 import com.oriole.wisepen.resource.domain.dto.req.*;
 import com.oriole.wisepen.resource.domain.dto.res.FavoriteCollectionResponse;
 import com.oriole.wisepen.resource.domain.dto.res.FavoriteItemResponse;
+import com.oriole.wisepen.resource.domain.dto.res.ResourceFavoriteStatusResponse;
 import com.oriole.wisepen.resource.service.IFavoriteService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -123,6 +125,24 @@ public class FavoriteController {
         String userId = SecurityContextHolder.getUserId().toString();
         favoriteService.deleteCollection(request, userId);
         return R.ok();
+    }
+
+    @Operation(
+            summary = "查询资源收藏状态",
+            description = """
+                    - 用途：查询当前用户对指定资源的收藏状态及所归属的收藏集合 ID 列表，用于资源详情页收藏按钮状态渲染。
+                    - 请求：resourceId 指定目标资源。
+                    - 约束：当前用户必须已登录。
+                    - 处理：按 userId+resourceId 精确查询收藏引用（唯一复合索引，O(1) 查询）；无收藏记录时返回 collectionIds=[].
+                    - 失败：无业务失败点。
+                    - 响应：返回 collectionIds；列表非空即表示已收藏，同时包含资源所归属的所有收藏集合 ID。
+                    """
+    )
+    @GetMapping("/getResourceFavoriteStatus")
+    public R<ResourceFavoriteStatusResponse> getResourceFavoriteStatus(
+            @NotBlank(message = ResourceValidationMsg.RESOURCE_ID_NOT_BLANK) @RequestParam String resourceId) {
+        String userId = SecurityContextHolder.getUserId().toString();
+        return R.ok(favoriteService.getResourceFavoriteStatus(resourceId, userId));
     }
 
     @Operation(
