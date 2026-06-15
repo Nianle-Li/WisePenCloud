@@ -43,13 +43,6 @@ public class ResourceItemResponseAssembler {
         return (responses != null && !responses.isEmpty()) ? responses.getFirst() : null;
     }
 
-    public ResourceItemResponse assembleOne(ResourceItemEntity entity, String currentUserId, Map<Long, GroupRoleType> groupRoles,
-                                            List<ResourceAction> requiredResourceActions, String visibleMarketGroupId) {
-        if (entity == null) return null;
-        List<ResourceItemResponse> responses = assembleMany(List.of(entity), currentUserId, groupRoles, requiredResourceActions, visibleMarketGroupId);
-        return (responses != null && !responses.isEmpty()) ? responses.getFirst() : null;
-    }
-
     public List<ResourceItemResponse> assembleMany(List<ResourceItemEntity> entities, String currentUserId, Map<Long, GroupRoleType> groupRoles, List<ResourceAction> requiredResourceActions) {
         return assembleMany(entities, currentUserId, groupRoles, requiredResourceActions, null);
     }
