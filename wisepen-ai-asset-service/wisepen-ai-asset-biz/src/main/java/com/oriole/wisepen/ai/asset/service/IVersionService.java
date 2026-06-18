@@ -13,6 +13,8 @@ public interface IVersionService<VT extends VersionBundleBaseEntity<VT>> {
 
     void createDraftVersion(String resourceId, Integer draftVersion);
 
+    void forkPublishedVersionSnapshot(String sourceResourceId, Integer sourceVersion, String targetResourceId);
+
     VT getVersionBundle(String resourceId, Integer version);
 
     AssetUploadInitResponse initUploadAssets(AssetUploadInitRequest req);

@@ -3,6 +3,7 @@ package com.oriole.wisepen.ai.asset.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import com.oriole.wisepen.ai.asset.domain.base.AIResourceInfoBase;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AIResourceCreateRequest;
+import com.oriole.wisepen.ai.asset.domain.dto.req.AIResourceForkRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AIResourceUpdateRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.res.AIResourceMetaInfoResponse;
 import com.oriole.wisepen.ai.asset.domain.entity.AIResourceBaseEntity;
@@ -54,6 +55,57 @@ public abstract class AIResourceServiceImpl<AT extends AIResourceBaseEntity<AT>,
         // 直接新建首份草案(1)
         versionService.createDraftVersion(resourceId, 1);
         return resourceId;
+    }
+
+    @Override
+    @Transactional
+    public String forkAIResource(AIResourceForkRequest req, String forkedResourceOwnerId) {
+        AT sourceEntity = aiResourceBaseRepository.findByResourceId(req.getResourceId())
+                .orElseThrow(() -> new ServiceException(AIResourceError.AI_RESOURCE_NOT_FOUND));
+        Integer sourceVersion = req.getForkedResourceVersion() == null
+                ? sourceEntity.getVersion()
+                : req.getForkedResourceVersion();
+
+        String targetResourceId = null;
+        try {
+            try {
+                targetResourceId = remoteResourceService.createResource(ResourceCreateReqDTO.builder()
+                        .resourceName(req.getForkedResourceName())
+                        .resourceType(getResourceType())
+                        .ownerId(forkedResourceOwnerId)
+                        .build()).getData();
+            } catch (Exception e) {
+                throw new ServiceException(AIResourceError.AI_RESOURCE_REGISTER_FAILED, e.getMessage());
+            }
+
+            AT targetEntity = buildNewResource(
+                    targetResourceId,
+                    sourceEntity.getName(),
+                    sourceEntity.getDescription(),
+                    sourceEntity.getSourceType()
+            );
+            targetEntity.setVersion(1);
+            aiResourceBaseRepository.save(targetEntity);
+            versionService.forkPublishedVersionSnapshot(req.getResourceId(), sourceVersion, targetResourceId);
+            log.info("AI resource fork finished. sourceResourceId={} resourceId={} version={}",
+                    req.getResourceId(), targetResourceId, sourceVersion);
+            return targetResourceId;
+        } catch (Exception e) {
+            cleanupForkTarget(targetResourceId);
+            log.warn("AI resource fork compensated. sourceResourceId={} resourceId={}",
+                    req.getResourceId(), targetResourceId, e);
+            throw new ServiceException(AIResourceError.AI_RESOURCE_FORK_FAILED, e.getMessage());
+        }
+    }
+
+    private void cleanupForkTarget(String targetResourceId) {
+        if (!StringUtils.hasText(targetResourceId)) return;
+        try {
+            versionService.deleteAllVersionsByResourceIds(List.of(targetResourceId));
+            aiResourceBaseRepository.deleteByResourceIdIn(List.of(targetResourceId));
+        } catch (Exception e) {
+            log.warn("AI resource fork cleanup failed. resourceId={}", targetResourceId, e);
+        }
     }
 
     @Override

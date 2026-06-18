@@ -2,6 +2,7 @@ package com.oriole.wisepen.ai.asset.controller;
 
 import cn.hutool.core.bean.BeanUtil;
 import com.oriole.wisepen.ai.asset.domain.base.AIResourceInfoBase;
+import com.oriole.wisepen.ai.asset.domain.dto.req.AIResourceForkRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AssetDeleteRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AssetUploadInitRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AIResourceCreateRequest;
@@ -17,6 +18,7 @@ import com.oriole.wisepen.ai.asset.service.impl.SkillVersionServiceImpl;
 import com.oriole.wisepen.common.core.context.SecurityContextHolder;
 import com.oriole.wisepen.common.core.domain.R;
 import com.oriole.wisepen.common.core.domain.enums.BusinessType;
+import com.oriole.wisepen.common.core.domain.enums.GroupRoleType;
 import com.oriole.wisepen.common.core.exception.ServiceException;
 import com.oriole.wisepen.common.log.annotation.Log;
 import com.oriole.wisepen.common.security.annotation.CheckLogin;
@@ -25,6 +27,8 @@ import com.oriole.wisepen.resource.domain.dto.ResourceCheckPermissionResDTO;
 import com.oriole.wisepen.resource.domain.dto.ResourceInfoGetReqDTO;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.enums.ResourceAccessRole;
+import com.oriole.wisepen.resource.enums.ResourceAction;
+import com.oriole.wisepen.resource.enums.ResourceType;
 import com.oriole.wisepen.resource.feign.RemoteResourceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,6 +39,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 @Tag(name = "技能资产", description = "技能资产创建、资料维护、版本发布和草稿文件管理")
 @RestController
@@ -64,6 +70,30 @@ public class SkillController {
         String userId = SecurityContextHolder.getUserId().toString();
         String resourceId = skillService.createAIResource(request, userId);
         return R.ok(resourceId);
+    }
+
+    @Operation(
+            summary = "复制技能资产",
+            description = """
+                    - 用途：将当前用户拥有 FORK 动作的技能资产复制为自己的新技能资源。
+                    - 请求：resourceId 指定源技能资源；forkedResourceVersion 可选，作为权限检查 targetVersion 并指定要复制的已发布版本；forkedResourceName 指定新 Skill 资源名。
+                    - 约束：当前用户必须拥有源资源 FORK 动作；Market 来源授权必须传当前上架 offerVersion；源资源类型必须是 SKILL；源版本必须存在且已发布，核心 SKILL.md 必须可用。
+                    - 处理：先调用资源服务实时校验 FORK 权限；注册新的 SKILL 资源，复制源主档信息和源已发布版本文件到目标 PUBLISHED version=1，并创建 DRAFT version=2。
+                    - 失败：未登录 -> PermissionError.NOT_LOGIN；源资源不是技能或技能不存在 -> AIResourceError.AI_RESOURCE_NOT_FOUND；无 FORK 权限 -> AIResourceError.AI_RESOURCE_PERMISSION_DENIED；版本不存在 -> AIResourceError.AI_RESOURCE_VERSION_NOT_FOUND；核心文件缺失 -> AIResourceError.AI_RESOURCE_CORE_ASSET_NOT_FOUND；存在未就绪资产 -> AIResourceError.AI_RESOURCE_ASSET_NOT_READY；资源注册失败 -> AIResourceError.AI_RESOURCE_REGISTER_FAILED；复制失败 -> AIResourceError.AI_RESOURCE_FORK_FAILED。
+                    - 响应：返回新技能资源 ID。
+                    """
+    )
+    @Log(title = "复制 Skill", businessType = BusinessType.INSERT)
+    @PostMapping("/forkSkill")
+    public R<String> forkSkill(@Validated @RequestBody AIResourceForkRequest request) {
+        Long userId = SecurityContextHolder.getUserId();
+        Map<Long, GroupRoleType> groupRoles = SecurityContextHolder.getGroupRoleMap();
+        ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(ResourceCheckPermissionReqDTO.builder()
+                .resourceId(request.getResourceId()).userId(userId).groupRoles(groupRoles).targetVersion(request.getForkedResourceVersion()).build()).getData();
+        if (permission == null || permission.getAllowedActions() == null || !permission.getAllowedActions().contains(ResourceAction.FORK)) {
+            throw new ServiceException(AIResourceError.AI_RESOURCE_PERMISSION_DENIED);
+        }
+        return R.ok(skillService.forkAIResource(request, userId.toString()));
     }
 
     @Operation(
@@ -185,10 +215,7 @@ public class SkillController {
 
     private void assertSkillOwner(String resourceId) {
         ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(ResourceCheckPermissionReqDTO.builder()
-                .resourceId(resourceId)
-                .userId(SecurityContextHolder.getUserId())
-                .groupRoles(SecurityContextHolder.getGroupRoleMap())
-                .build()).getData();
+                .resourceId(resourceId).userId(SecurityContextHolder.getUserId()).groupRoles(SecurityContextHolder.getGroupRoleMap()).build()).getData();
         if (permission == null || permission.getResourceAccessRole() != ResourceAccessRole.OWNER) {
             throw new ServiceException(AIResourceError.AI_RESOURCE_PERMISSION_DENIED);
         }

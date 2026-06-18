@@ -7,7 +7,6 @@ import com.oriole.wisepen.ai.asset.domain.dto.req.AssetDeleteRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.req.AssetUploadInitRequest;
 import com.oriole.wisepen.ai.asset.domain.dto.res.AssetUploadInitResponse;
 import com.oriole.wisepen.ai.asset.domain.entity.AIResourceBaseEntity;
-import com.oriole.wisepen.ai.asset.domain.entity.SkillEntity;
 import com.oriole.wisepen.ai.asset.domain.entity.VersionBundleBaseEntity;
 import com.oriole.wisepen.ai.asset.enums.AssetUploadStatus;
 import com.oriole.wisepen.ai.asset.enums.AssetResourceType;
@@ -18,6 +17,8 @@ import com.oriole.wisepen.ai.asset.repository.AIResourceBaseRepository;
 import com.oriole.wisepen.ai.asset.repository.VersionBundleBaseRepository;
 import com.oriole.wisepen.ai.asset.service.IVersionService;
 import com.oriole.wisepen.common.core.exception.ServiceException;
+import com.oriole.wisepen.file.storage.api.domain.dto.CopyReqDTO;
+import com.oriole.wisepen.file.storage.api.domain.dto.StorageRecordDTO;
 import com.oriole.wisepen.file.storage.api.domain.dto.UploadInitReqDTO;
 import com.oriole.wisepen.file.storage.api.domain.dto.UploadInitRespDTO;
 import com.oriole.wisepen.file.storage.api.domain.mq.FileUploadedMessage;
@@ -53,6 +54,76 @@ public abstract class VersionServiceImpl<VT extends VersionBundleBaseEntity<VT>,
             versionBundleBaseRepository.findByResourceIdAndVersion(resourceId, draftVersion - 1).ifPresent(draft::copyBy);
         }
         versionBundleBaseRepository.save(draft);
+    }
+
+    @Override
+    @Transactional
+    public void forkPublishedVersionSnapshot(String sourceResourceId, Integer sourceVersion, String targetResourceId) {
+        if (sourceVersion == null || sourceVersion <= 0) {
+            throw new ServiceException(AIResourceError.AI_RESOURCE_VERSION_NOT_FOUND);
+        }
+        VT source = versionBundleBaseRepository.findByResourceIdAndVersion(sourceResourceId, sourceVersion)
+                .orElseThrow(() -> new ServiceException(AIResourceError.AI_RESOURCE_VERSION_NOT_FOUND));
+        if (source.getStatus() != VersionStatus.PUBLISHED) {
+            throw new ServiceException(AIResourceError.AI_RESOURCE_VERSION_NOT_FOUND);
+        }
+
+        List<String> copiedObjectKeys = new ArrayList<>();
+        try {
+            VT published = buildDraft(targetResourceId, 1);
+            published.copyBy(source);
+            published.setStatus(VersionStatus.PUBLISHED);
+            // 资产文件需要物理拷贝
+            published.setAssets(copyAssetsForFork(source.getAssets(), targetResourceId, copiedObjectKeys));
+            published.checkCoreAssetReady();
+            versionBundleBaseRepository.save(published);
+
+            VT draft = buildDraft(targetResourceId, 2);
+            draft.copyBy(published);
+            draft.setStatus(VersionStatus.DRAFT);
+            versionBundleBaseRepository.save(draft);
+        } catch (Exception e) {
+            cleanupForkedVersion(targetResourceId, copiedObjectKeys);
+            throw new ServiceException(AIResourceError.AI_RESOURCE_FORK_FAILED, e.getMessage());
+        }
+    }
+
+    private List<AssetInfoBase> copyAssetsForFork(List<AssetInfoBase> sourceAssets, String targetResourceId, List<String> copiedObjectKeys) {
+        if (sourceAssets == null || sourceAssets.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<AssetInfoBase> copiedAssets = new ArrayList<>();
+        for (AssetInfoBase sourceAsset : sourceAssets) {
+            if (isAssetUnavailable(sourceAsset)) {
+                throw new ServiceException(AIResourceError.AI_RESOURCE_ASSET_NOT_READY);
+            }
+            StorageRecordDTO copied = remoteStorageService.copyFile(CopyReqDTO.builder()
+                    .sourceObjectKey(sourceAsset.getObjectKey())
+                    .scene(getStorageScene())
+                    .bizTag(targetResourceId)
+                    .build()).getData();
+            if (copied == null || !StringUtils.hasText(copied.getObjectKey())) {
+                throw new ServiceException(AIResourceError.AI_RESOURCE_FORK_FAILED);
+            }
+            copiedObjectKeys.add(copied.getObjectKey());
+            copiedAssets.add(AssetInfoBase.builder()
+                    .id(IdUtil.fastSimpleUUID())
+                    .path(sourceAsset.getPath())
+                    .name(sourceAsset.getName())
+                    .skillAssetResourceType(sourceAsset.getSkillAssetResourceType())
+                    .objectKey(copied.getObjectKey())
+                    .size(copied.getSize())
+                    .uploadStatus(AssetUploadStatus.AVAILABLE)
+                    .build());
+        }
+        return copiedAssets;
+    }
+
+    private void cleanupForkedVersion(String targetResourceId, List<String> copiedObjectKeys) {
+        versionBundleBaseRepository.deleteByResourceIdIn(List.of(targetResourceId));
+        if (copiedObjectKeys != null && !copiedObjectKeys.isEmpty()) {
+            eventPublisher.publishFileDeleteEvent(copiedObjectKeys);
+        }
     }
 
     @Override
