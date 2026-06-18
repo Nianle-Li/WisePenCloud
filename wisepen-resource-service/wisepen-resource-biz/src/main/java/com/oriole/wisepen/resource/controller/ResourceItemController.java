@@ -12,14 +12,10 @@ import com.oriole.wisepen.common.core.exception.ServiceException;
 import com.oriole.wisepen.common.log.annotation.Log;
 import com.oriole.wisepen.common.security.annotation.CheckLogin;
 import com.oriole.wisepen.resource.constant.ResourceConstants;
-import com.oriole.wisepen.resource.domain.dto.ResourceCheckPermissionReqDTO;
-import com.oriole.wisepen.resource.domain.dto.ResourceCheckPermissionResDTO;
-import com.oriole.wisepen.resource.domain.dto.req.ResourceForkRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceUpdateActionPermissionRequest;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceRenameRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceUpdateTagsRequest;
-import com.oriole.wisepen.resource.enums.ResourceAction;
 import com.oriole.wisepen.resource.enums.ResourceSortBy;
 import com.oriole.wisepen.resource.exception.ResourceError;
 import com.oriole.wisepen.resource.service.IResourceService;
@@ -148,34 +144,6 @@ public class ResourceItemController {
 
         resourceService.assertResourceOwner(req.getResourceId(), userId);
         resourceService.updateResourceActionPermission(req);
-        return R.ok();
-    }
-
-    @Operation(
-            summary = "复制资源",
-            description = """
-                    - 用途：当前用户复制任意自己拥有 FORK 动作的资源。
-                    - 请求：resourceId 指定源资源；forkedResourceVersion 可选，用于版本敏感资源的权限裁决和复制目标版本。
-                    - 约束：当前用户必须拥有源资源 FORK 动作；forkedResourceVersion 会作为权限检查 targetVersion，Market 来源授权只在其等于当前上架 offerVersion 时生效。
-                    - 处理：通过资源权限接口实时校验 FORK 动作，校验通过后发布资源复制消息；不依赖 Market 订单或复制次数。
-                    - 响应：成功时返回空结果。
-                    """
-    )
-    @Log(title = "复制资源", businessType = BusinessType.INSERT)
-    @PostMapping("/forkResource")
-    public R<Void> forkResource(@Validated @RequestBody ResourceForkRequest req) {
-        // 复制资源需要完整鉴权
-        ResourceCheckPermissionResDTO permission = resourceService.checkPermission(ResourceCheckPermissionReqDTO.builder()
-                .resourceId(req.getResourceId())
-                .userId(SecurityContextHolder.getUserId())
-                .groupRoles(SecurityContextHolder.getGroupRoleMap())
-                .targetVersion(req.getForkedResourceVersion())
-                .build());
-
-        if (permission.getAllowedActions() == null || !permission.getAllowedActions().contains(ResourceAction.FORK)) {
-            throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
-        }
-        resourceService.forkResource(req, SecurityContextHolder.getUserId().toString());
         return R.ok();
     }
 

@@ -4,11 +4,13 @@ import com.oriole.wisepen.common.core.context.SecurityContextHolder;
 import com.oriole.wisepen.common.core.domain.PageR;
 import com.oriole.wisepen.common.core.domain.R;
 import com.oriole.wisepen.common.core.domain.enums.BusinessType;
+import com.oriole.wisepen.common.core.domain.enums.GroupRoleType;
 import com.oriole.wisepen.common.core.exception.ServiceException;
 import com.oriole.wisepen.common.log.annotation.Log;
 import com.oriole.wisepen.common.security.annotation.CheckLogin;
 import com.oriole.wisepen.note.api.domain.base.NoteInfoBase;
 import com.oriole.wisepen.note.api.domain.dto.req.NoteCreateRequest;
+import com.oriole.wisepen.note.api.domain.dto.req.NoteForkRequest;
 import com.oriole.wisepen.note.api.domain.dto.res.NoteInfoResponse;
 import com.oriole.wisepen.note.api.domain.dto.res.NoteVersionListResponse;
 import com.oriole.wisepen.note.service.INoteService;
@@ -18,6 +20,8 @@ import com.oriole.wisepen.resource.domain.dto.ResourceCheckPermissionResDTO;
 import com.oriole.wisepen.resource.domain.dto.ResourceInfoGetReqDTO;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.enums.ResourceAccessRole;
+import com.oriole.wisepen.resource.enums.ResourceAction;
+import com.oriole.wisepen.resource.enums.ResourceType;
 import com.oriole.wisepen.resource.feign.RemoteResourceService;
 import com.oriole.wisepen.user.api.domain.base.UserDisplayBase;
 import com.oriole.wisepen.user.api.feign.RemoteUserService;
@@ -30,6 +34,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+import static com.oriole.wisepen.note.exception.NoteError.NOTE_NOT_FOUND;
 import static com.oriole.wisepen.note.exception.NoteError.NOTE_PERMISSION_DENIED;
 
 @Slf4j
@@ -62,6 +67,30 @@ public class NoteController {
         String userId = SecurityContextHolder.getUserId().toString();
         String resourceId = noteService.createNote(request, userId);
         return R.ok(resourceId);
+    }
+
+    @Operation(
+            summary = "复制笔记",
+            description = """
+                    - 用途：将当前用户拥有 FORK 动作的笔记复制为自己的新笔记资源。
+                    - 请求：resourceId 指定源笔记资源；forkedResourceVersion 可选，作为权限检查 targetVersion 并指定源笔记快照版本；forkedResourceName 指定新笔记资源名。
+                    - 约束：当前用户必须拥有源资源 FORK 动作；Market 来源授权必须传当前上架 offerVersion。
+                    - 处理：先调用资源服务实时校验 FORK 权限；创建新的 NOTE 资源和笔记元信息，并复制距离 targetVersion 版本最近的源 FULL 和 DELTA 快照。
+                    - 失败：未登录 -> PermissionError.NOT_LOGIN；源资源不是笔记或笔记不存在 -> NoteError.NOTE_NOT_FOUND；无 FORK 权限 -> NoteError.NOTE_PERMISSION_DENIED；资源注册失败 -> NoteError.NOTE_REGISTER_RESOURCE_FAILED；复制失败 -> NoteError.NOTE_FORK_FAILED。
+                    - 响应：返回新笔记资源 ID。
+                    """
+    )
+    @Log(title = "复制笔记", businessType = BusinessType.INSERT)
+    @PostMapping("/forkNote")
+    public R<String> forkNote(@Validated @RequestBody NoteForkRequest request) {
+        Long userId = SecurityContextHolder.getUserId();
+        Map<Long, GroupRoleType> groupRoles = SecurityContextHolder.getGroupRoleMap();
+        ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(ResourceCheckPermissionReqDTO.builder()
+                .resourceId(request.getResourceId()).userId(userId).groupRoles(groupRoles).targetVersion(request.getForkedResourceVersion()).build()).getData();
+        if (permission == null || permission.getAllowedActions() == null || !permission.getAllowedActions().contains(ResourceAction.FORK)) {
+            throw new ServiceException(NOTE_PERMISSION_DENIED);
+        }
+        return R.ok(noteService.forkNote(request, userId.toString()));
     }
 
     @Operation(
@@ -114,15 +143,13 @@ public class NoteController {
             @RequestParam String resourceId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(new ResourceCheckPermissionReqDTO(
-                resourceId, SecurityContextHolder.getUserId(), SecurityContextHolder.getGroupRoleMap()
-        )).getData();
-        if (permission.getResourceAccessRole() == ResourceAccessRole.OWNER){
-            PageR<NoteVersionListResponse> noteVersionListResponses = noteVersionService.listVersions(resourceId, page, size);
-            return R.ok(noteVersionListResponses);
-        } else {
+        ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(ResourceCheckPermissionReqDTO.builder()
+                .resourceId(resourceId).userId(SecurityContextHolder.getUserId()).groupRoles(SecurityContextHolder.getGroupRoleMap()).build()).getData();
+        if (permission == null || permission.getResourceAccessRole() != ResourceAccessRole.OWNER) {
             throw new ServiceException(NOTE_PERMISSION_DENIED);
         }
+        PageR<NoteVersionListResponse> noteVersionListResponses = noteVersionService.listVersions(resourceId, page, size);
+        return R.ok(noteVersionListResponses);
     }
 
     @Operation(
@@ -138,14 +165,12 @@ public class NoteController {
     )
     @PostMapping("/revertNote")
     public R<Void> revertToVersion(@RequestParam String resourceId, @RequestParam Long version) {
-        ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(new ResourceCheckPermissionReqDTO(
-                resourceId, SecurityContextHolder.getUserId(), SecurityContextHolder.getGroupRoleMap()
-        )).getData();
-        if (permission.getResourceAccessRole() == ResourceAccessRole.OWNER){
-            // TODO: 待未来实现
-        } else {
+        ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(ResourceCheckPermissionReqDTO.builder()
+                .resourceId(resourceId).userId(SecurityContextHolder.getUserId()).groupRoles(SecurityContextHolder.getGroupRoleMap()).build()).getData();
+        if (permission == null || permission.getResourceAccessRole() != ResourceAccessRole.OWNER) {
             throw new ServiceException(NOTE_PERMISSION_DENIED);
         }
+        // TODO: 待未来实现
         return R.ok();
     }
 }

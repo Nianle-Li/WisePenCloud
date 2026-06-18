@@ -2,7 +2,7 @@ package com.oriole.wisepen.note.service;
 
 import com.oriole.wisepen.note.api.domain.base.NoteInfoBase;
 import com.oriole.wisepen.note.api.domain.dto.req.NoteCreateRequest;
-import com.oriole.wisepen.resource.domain.mq.ResourceForkMessage;
+import com.oriole.wisepen.note.api.domain.dto.req.NoteForkRequest;
 
 import java.util.List;
 
@@ -14,5 +14,5 @@ public interface INoteService {
 
     NoteInfoBase getNoteInfo(String resourceId);
 
-    void forkNote(ResourceForkMessage request);
+    String forkNote(NoteForkRequest request, String forkedResourceOwnerId);
 }

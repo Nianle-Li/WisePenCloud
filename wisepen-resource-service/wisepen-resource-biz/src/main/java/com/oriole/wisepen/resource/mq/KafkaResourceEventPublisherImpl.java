@@ -5,7 +5,6 @@ import com.oriole.wisepen.resource.constant.MqTopicConstants;
 import com.oriole.wisepen.resource.domain.entity.ResourceItemEntity;
 import com.oriole.wisepen.resource.domain.mq.AclRecalculateMessage;
 import com.oriole.wisepen.resource.domain.mq.ResourceDeletedMessage;
-import com.oriole.wisepen.resource.domain.mq.ResourceForkMessage;
 import com.oriole.wisepen.resource.enums.ResourceType;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
@@ -57,15 +56,4 @@ public class KafkaResourceEventPublisherImpl implements IResourceEventPublisher 
                 MqTopicConstants.TOPIC_RESOURCE_PHYSICAL_DESTROY, resourceCount, dedupKey);
     }
 
-    @Override
-    public void publishResourceForkEvent(ResourceForkMessage message) {
-        String dedupKey = message.getForkTaskId();
-        log.info("resourceFork published topic={} forkTaskId={} sourceResourceId={} resourceType={} version={}",
-                MqTopicConstants.TOPIC_RESOURCE_FORK,
-                message.getForkTaskId(),
-                message.getSourceResourceId(),
-                message.getSourceResourceType(),
-                message.getForkedResourceVersion());
-        reliablePublisher.publish(MqTopicConstants.TOPIC_RESOURCE_FORK, dedupKey, message, dedupKey);
-    }
 }

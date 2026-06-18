@@ -2,7 +2,6 @@ package com.oriole.wisepen.resource.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.bean.copier.CopyOptions;
-import cn.hutool.core.util.IdUtil;
 import com.oriole.wisepen.common.core.domain.PageR;
 import com.oriole.wisepen.common.core.domain.enums.GroupRoleType;
 import com.oriole.wisepen.common.core.domain.enums.list.QueryLogicEnum;
@@ -13,7 +12,6 @@ import com.oriole.wisepen.resource.domain.ComputedGroupAcl;
 import com.oriole.wisepen.resource.domain.GroupTagBind;
 import com.oriole.wisepen.resource.domain.MarketSaleInfo;
 import com.oriole.wisepen.resource.domain.dto.*;
-import com.oriole.wisepen.resource.domain.dto.req.ResourceForkRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceRenameRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceUpdateActionPermissionRequest;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
@@ -21,7 +19,6 @@ import com.oriole.wisepen.resource.domain.entity.FavoriteResourceRef;
 import com.oriole.wisepen.resource.domain.entity.GroupResConfigEntity;
 import com.oriole.wisepen.resource.domain.entity.ResourceItemEntity;
 import com.oriole.wisepen.resource.domain.entity.TagEntity;
-import com.oriole.wisepen.resource.domain.mq.ResourceForkMessage;
 import com.oriole.wisepen.resource.enums.*;
 import com.oriole.wisepen.resource.event.TagChangedEvent;
 import com.oriole.wisepen.resource.event.TagDeletedEvent;
@@ -400,23 +397,6 @@ public class ResourceServiceImpl implements IResourceService {
         log.info("resource created. resourceId={} ownerId={} resourceType={} pathTagId={}",
                 entity.getResourceId(), dto.getOwnerId(), dto.getResourceType(), dto.getPathTagId());
         return entity.getResourceId();
-    }
-
-    @Override
-    public void forkResource(ResourceForkRequest req, String forkedResourceOwnerId) {
-        ResourceItemEntity entity = resourceItemRepository.findById(req.getResourceId())
-                .orElseThrow(() -> new ServiceException(ResourceError.RESOURCE_NOT_FOUND));
-
-        String forkTaskId = IdUtil.fastSimpleUUID();
-        ResourceForkMessage forkMessage = ResourceForkMessage.builder()
-                .forkTaskId(forkTaskId)
-                .sourceResourceId(entity.getResourceId()).sourceResourceType(entity.getResourceType())
-                .forkedResourceVersion(req.getForkedResourceVersion()).forkedResourceOwnerId(Long.valueOf(forkedResourceOwnerId))
-                .forkedResourceName(req.getForkedResourceName() != null ? req.getForkedResourceName() : entity.getResourceName())
-                .build();
-        eventPublisher.publishResourceForkEvent(forkMessage);
-        log.info("resource fork published. forkTaskId={} sourceResourceId={} version={} ownerId={}",
-                forkTaskId, entity.getResourceId(), req.getForkedResourceVersion(), forkedResourceOwnerId);
     }
 
     @Override

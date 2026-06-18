@@ -23,10 +23,4 @@ public class ResourceCheckPermissionReqDTO {
     @NotNull(message = ResourceValidationMsg.USER_GROUP_ROLES_NOT_NULL)
     private Map<Long, GroupRoleType> groupRoles;
     private Integer targetVersion;
-
-    public ResourceCheckPermissionReqDTO(String resourceId, Long userId, Map<Long, GroupRoleType> groupRoles) {
-        this.resourceId = resourceId;
-        this.userId = userId;
-        this.groupRoles = groupRoles;
-    }
 }

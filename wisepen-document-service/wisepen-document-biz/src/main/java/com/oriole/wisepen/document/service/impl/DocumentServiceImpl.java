@@ -8,6 +8,7 @@ import com.oriole.wisepen.document.api.constant.DocumentConstants;
 import com.oriole.wisepen.document.api.domain.base.DocumentInfoBase;
 import com.oriole.wisepen.document.api.domain.base.DocumentStatus;
 import com.oriole.wisepen.document.api.domain.base.DocumentUploadMeta;
+import com.oriole.wisepen.document.api.domain.dto.req.DocumentForkRequest;
 import com.oriole.wisepen.document.api.domain.dto.req.DocumentUploadInitRequest;
 import com.oriole.wisepen.document.api.domain.dto.res.DocumentUploadInitResponse;
 import com.oriole.wisepen.document.api.domain.mq.DocumentParseTaskMessage;
@@ -29,13 +30,13 @@ import com.oriole.wisepen.file.storage.api.domain.dto.UploadInitRespDTO;
 import com.oriole.wisepen.file.storage.api.enums.StorageSceneEnum;
 import com.oriole.wisepen.file.storage.api.feign.RemoteStorageService;
 import com.oriole.wisepen.resource.domain.dto.ResourceCreateReqDTO;
-import com.oriole.wisepen.resource.domain.mq.ResourceForkMessage;
 import com.oriole.wisepen.resource.enums.ResourceType;
 import com.oriole.wisepen.resource.feign.RemoteResourceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -323,15 +324,10 @@ public class DocumentServiceImpl implements IDocumentService {
 
     @Override
     @Transactional
-    public void forkDocument(ResourceForkMessage msg) {
-        String targetDocumentId = msg.getForkTaskId();
-
-        // 防止Fork任务重复执行
-        DocumentInfoEntity existingTarget = documentInfoRepository.findById(targetDocumentId).orElse(null);
-        if (existingTarget != null) return;
-
+    public String forkDocument(DocumentForkRequest request, String forkedResourceOwnerId) {
+        String targetDocumentId = IdUtil.fastSimpleUUID();
         // 检索待复制项
-        DocumentInfoEntity sourceInfo = documentInfoRepository.findByResourceId(msg.getSourceResourceId())
+        DocumentInfoEntity sourceInfo = documentInfoRepository.findByResourceId(request.getResourceId())
                 .orElseThrow(() -> new ServiceException(DocumentError.DOCUMENT_NOT_FOUND));
         // 待复制项必须已经就绪
         if (sourceInfo.getDocumentStatus() == null || sourceInfo.getDocumentStatus().getStatus() != DocumentStatusEnum.READY) {
@@ -361,7 +357,7 @@ public class DocumentServiceImpl implements IDocumentService {
                 eventPublisher.publishFileDeleteEvent(copiedObjectKeys);
             }
             log.warn("document fork compensated. sourceResourceId={} documentId={}",
-                    msg.getSourceResourceId(), targetDocumentId, e);
+                    request.getResourceId(), targetDocumentId, e);
             throw new ServiceException(DocumentError.DOCUMENT_FORK_FAILED, e.getMessage());
         }
 
@@ -385,7 +381,7 @@ public class DocumentServiceImpl implements IDocumentService {
                     .documentId(targetDocumentId)
                     .sourceObjectKey(copiedObjectKeys.getFirst())
                     .previewObjectKey(copiedObjectKeys.getLast())
-                    .uploadMeta(null)
+                    .uploadMeta(sourceInfo.getUploadMeta())
                     .documentStatus(new DocumentStatus(DocumentStatusEnum.READY))
                     .maxPreviewPages(sourceInfo.getMaxPreviewPages())
                     .build();
@@ -396,9 +392,9 @@ public class DocumentServiceImpl implements IDocumentService {
             try {
                 resourceId = remoteResourceService.createResource(
                         ResourceCreateReqDTO.builder()
-                                .resourceName(msg.getForkedResourceName())
-                                .resourceType(msg.getSourceResourceType())
-                                .ownerId(msg.getForkedResourceOwnerId().toString())
+                                .resourceName(request.getForkedResourceName())
+                                .resourceType(sourceInfo.getUploadMeta().getFileType())
+                                .ownerId(forkedResourceOwnerId)
                                 .size(sourceInfo.getUploadMeta().getSize())
                                 .build()
                 ).getData();
@@ -414,7 +410,9 @@ public class DocumentServiceImpl implements IDocumentService {
                     .content(targetContent.getRawText())
                     .build());
             log.info("document fork finished. sourceResourceId={} resourceId={} documentId={}",
-                    msg.getSourceResourceId(), resourceId, targetDocumentId);
+                    request.getResourceId(), resourceId, targetDocumentId);
+
+            return resourceId;
 
         } catch (Exception e) {
             // 异常时回滚
@@ -423,7 +421,7 @@ public class DocumentServiceImpl implements IDocumentService {
             documentInfoRepository.deleteById(targetDocumentId);
             eventPublisher.publishFileDeleteEvent(copiedObjectKeys);
             log.warn("document fork compensated. sourceResourceId={} documentId={}",
-                    msg.getSourceResourceId(), targetDocumentId, e);
+                    request.getResourceId(), targetDocumentId, e);
             throw new ServiceException(DocumentError.DOCUMENT_FORK_FAILED, e.getMessage());
         }
     }

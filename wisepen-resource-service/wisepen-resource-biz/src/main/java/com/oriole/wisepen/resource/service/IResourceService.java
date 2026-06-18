@@ -6,7 +6,6 @@ import com.oriole.wisepen.common.core.domain.enums.list.QueryLogicEnum;
 import com.oriole.wisepen.common.core.domain.enums.list.SortDirectionEnum;
 import com.oriole.wisepen.resource.domain.GroupTagBind;
 import com.oriole.wisepen.resource.domain.dto.*;
-import com.oriole.wisepen.resource.domain.dto.req.ResourceForkRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceRenameRequest;
 import com.oriole.wisepen.resource.domain.dto.req.ResourceUpdateActionPermissionRequest;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
@@ -56,8 +55,6 @@ public interface IResourceService {
     // ToService：增加、移除、更新资源；检查特定资源的权限
 
     String createResourceItem(ResourceCreateReqDTO dto);
-
-    void forkResource(ResourceForkRequest req, String forkedResourceOwnerId);
 
     void hardRemoveResources(List<String> resourceIds);
 

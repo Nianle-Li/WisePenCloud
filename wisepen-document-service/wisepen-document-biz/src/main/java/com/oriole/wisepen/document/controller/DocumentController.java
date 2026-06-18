@@ -3,11 +3,14 @@ package com.oriole.wisepen.document.controller;
 import com.oriole.wisepen.common.core.context.SecurityContextHolder;
 import com.oriole.wisepen.common.core.domain.R;
 import com.oriole.wisepen.common.core.domain.enums.BusinessType;
+import com.oriole.wisepen.common.core.domain.enums.GroupRoleType;
 import com.oriole.wisepen.common.core.exception.ServiceException;
 import com.oriole.wisepen.common.log.annotation.Log;
 import com.oriole.wisepen.common.security.annotation.CheckLogin;
+import com.oriole.wisepen.document.api.constant.DocumentConstants;
 import com.oriole.wisepen.document.api.domain.base.DocumentInfoBase;
 import com.oriole.wisepen.document.api.domain.base.DocumentStatus;
+import com.oriole.wisepen.document.api.domain.dto.req.DocumentForkRequest;
 import com.oriole.wisepen.document.api.domain.dto.req.DocumentUploadInitRequest;
 import com.oriole.wisepen.document.api.domain.dto.res.DocumentInfoResponse;
 import com.oriole.wisepen.document.api.domain.dto.res.DocumentUploadInitResponse;
@@ -19,6 +22,7 @@ import com.oriole.wisepen.resource.domain.dto.ResourceInfoGetReqDTO;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceItemResponse;
 import com.oriole.wisepen.resource.enums.ResourceAccessRole;
 import com.oriole.wisepen.resource.enums.ResourceAction;
+import com.oriole.wisepen.resource.enums.ResourceType;
 import com.oriole.wisepen.resource.feign.RemoteResourceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -30,7 +34,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
+import static com.oriole.wisepen.document.exception.DocumentError.DOCUMENT_NOT_FOUND;
 import static com.oriole.wisepen.document.exception.DocumentError.DOCUMENT_PERMISSION_DENIED;
 
 
@@ -62,6 +68,30 @@ public class DocumentController {
     public R<DocumentUploadInitResponse> uploadDoc(@Valid @RequestBody DocumentUploadInitRequest request) {
         Long uploaderId = SecurityContextHolder.getUserId();
         return R.ok(documentService.initUploadDocument(request, uploaderId));
+    }
+
+    @Operation(
+            summary = "复制文档",
+            description = """
+                    - 用途：将当前用户拥有 FORK 动作的文档复制为自己的新文档资源。
+                    - 请求：resourceId 指定源文档资源；forkedResourceVersion 可选，作为权限检查 targetVersion；forkedResourceName 指定新文档资源名。
+                    - 约束：当前用户必须拥有源资源 FORK 动作；Market 来源授权必须传当前上架 offerVersion；源资源类型必须是文档服务支持的文档类型；源文档必须已处理完成。
+                    - 处理：先调用资源服务实时校验 FORK 权限；复制源文件、预览文件、正文内容、PDF 元信息和文档元信息，注册新的文档资源并发布文档就绪事件。
+                    - 失败：未登录 -> PermissionError.NOT_LOGIN；源资源不是文档或文档不存在 -> DocumentError.DOCUMENT_NOT_FOUND；无 FORK 权限 -> DocumentError.DOCUMENT_PERMISSION_DENIED；源文档未就绪 -> DocumentError.DOCUMENT_PREVIEW_NOT_READY；资源注册失败 -> DocumentError.DOCUMENT_REGISTER_RESOURCE_FAILED；复制失败 -> DocumentError.DOCUMENT_FORK_FAILED。
+                    - 响应：返回新文档资源 ID。
+                    """
+    )
+    @Log(title = "复制文档", businessType = BusinessType.INSERT)
+    @PostMapping("/forkDocument")
+    public R<String> forkDocument(@Valid @RequestBody DocumentForkRequest request) {
+        Long userId = SecurityContextHolder.getUserId();
+        Map<Long, GroupRoleType> groupRoles = SecurityContextHolder.getGroupRoleMap();
+        ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(ResourceCheckPermissionReqDTO.builder()
+                .resourceId(request.getResourceId()).userId(userId).groupRoles(groupRoles).targetVersion(request.getForkedResourceVersion()).build()).getData();
+        if (permission == null || permission.getAllowedActions() == null || !permission.getAllowedActions().contains(ResourceAction.FORK)) {
+            throw new ServiceException(DOCUMENT_PERMISSION_DENIED);
+        }
+        return R.ok(documentService.forkDocument(request, userId.toString()));
     }
 
     @Operation(
@@ -151,14 +181,12 @@ public class DocumentController {
                                 HttpServletRequest request,
                                 HttpServletResponse response) {
         String userId = String.valueOf(SecurityContextHolder.getUserId());
-        ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(new ResourceCheckPermissionReqDTO(
-                resourceId, SecurityContextHolder.getUserId(), SecurityContextHolder.getGroupRoleMap(), targetVersion
-        )).getData();
-        if (permission.getResourceAccessRole() == ResourceAccessRole.OWNER || permission.getAllowedActions().contains(ResourceAction.VIEW)) {
-            documentPreviewService.handlePreviewRequest(request, response, resourceId, userId);
-        } else {
+        ResourceCheckPermissionResDTO permission = remoteResourceService.checkResPermission(ResourceCheckPermissionReqDTO.builder()
+                .resourceId(resourceId).userId(SecurityContextHolder.getUserId()).groupRoles(SecurityContextHolder.getGroupRoleMap()).build()).getData();
+        if (permission == null || permission.getAllowedActions() == null || !permission.getAllowedActions().contains(ResourceAction.VIEW)) {
             throw new ServiceException(DOCUMENT_PERMISSION_DENIED);
         }
+        documentPreviewService.handlePreviewRequest(request, response, resourceId, userId);
     }
 
     @Operation(
