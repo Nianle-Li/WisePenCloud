@@ -122,6 +122,9 @@ public class OfficeMarkdownExtractor {
 
             // 每一页 slide 输出为一个二级标题，保留幻灯片分页结构
             for (Slide<S, P> slide : slideShow.getSlides()) {
+                if (slideNo > 1) {
+                    markdown.append(MarkdownPageBreakInjector.pageBreakMarker(slideNo)).append("\n\n");
+                }
                 markdown.append("## Slide ").append(slideNo++).append("\n\n");
 
                 // 遍历当前 slide 上的所有图形对象
