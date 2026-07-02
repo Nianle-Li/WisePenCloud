@@ -358,10 +358,11 @@ public class ResourceServiceImpl implements IResourceService {
 
         if (groupId != null) {
             // 过滤非检索groupId的标签
-            responses.forEach(response ->
-                    response.getCurrentTags().entrySet().removeIf(entry ->
-                            !Objects.equals(entry.getValue().getGroupId(), groupId) && !Objects.equals(entry.getValue().getGroupId(), ResourceConstants.MARKET_GROUP_PREFIX + groupId))
-            );
+            responses.forEach(response -> {
+                response.setTagBinds(response.getTagBinds().stream()
+                        .filter(tagBind -> Objects.equals(tagBind.getGroupId(), groupId) || Objects.equals(tagBind.getGroupId(), ResourceConstants.MARKET_GROUP_PREFIX + groupId))
+                        .toList());
+            });
         }
 
         PageR<ResourceItemResponse> pageR = new PageR<>(entityPage.getTotalElements(), page, size);
