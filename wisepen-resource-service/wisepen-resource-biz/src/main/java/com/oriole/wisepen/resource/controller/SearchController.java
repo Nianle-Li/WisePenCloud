@@ -68,7 +68,7 @@ public class SearchController {
                     - 用途：搜索集市中已发布的售卖资源快照，用于买家发现可购买资源。
                     - 请求：keyword 为搜索关键字，可为空；marketGroupId 可选，用于限定集市组；scope 指定搜索范围；page 和 size 控制分页。
                     - 约束：当前用户必须已登录；scope 必须是合法枚举；仅返回已发布的集市售卖快照。
-                    - 处理：查询集市专用搜索索引，只检索资源名和可预览范围内的 previewContent；不复用普通资源 ACL；不返回 ES 技术主键。
+                    - 处理：查询集市专用搜索索引，检索资源名、可预览范围内的 previewContent 和内部 searchContent；仅对资源名和 previewContent 做高亮；不复用普通资源 ACL；不返回 ES 技术主键和 searchContent。
                     - 失败：搜索服务执行失败 -> ResourceError.RESOURCE_SEARCH_FAILED。
                     - 响应：返回分页搜索命中列表和总数，命中项包含 resourceId、marketGroupId、resourceType、resourceName、ownerId、marketSaleInfo、highlightContent 和 updateTime。
                     """

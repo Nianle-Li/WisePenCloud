@@ -40,7 +40,7 @@ public class AdminMarketController {
                     - 用途：平台管理员检索集市售卖资源快照，用于审核、下架、封禁和排查。
                     - 请求：keyword 为搜索关键字，可为空；marketGroupId 可选；scope 指定搜索范围；status 可选，不传时返回全部售卖状态；page 和 size 控制分页。
                     - 约束：当前用户必须是平台管理员；scope 必须是合法枚举；status 传入时必须是合法 MarketSaleStatus。
-                    - 处理：查询集市专用搜索索引，按 status 决定检索哪些售卖状态；只检索资源名和可预览范围内的 previewContent；不复用普通资源 ACL；不返回 ES 技术主键。
+                    - 处理：查询集市专用搜索索引，按 status 决定检索哪些售卖状态；检索资源名、可预览范围内的 previewContent 和内部 searchContent；仅对资源名和 previewContent 做高亮；不复用普通资源 ACL；不返回 ES 技术主键和 searchContent。
                     - 失败：当前身份不是平台管理员 -> PermissionError.UNAUTHORIZED；搜索服务执行失败 -> ResourceError.RESOURCE_SEARCH_FAILED。
                     - 响应：返回分页搜索命中列表和总数，命中项包含 resourceId、marketGroupId、resourceType、resourceName、ownerId、marketSaleInfo、highlightContent 和 updateTime。
                     """
