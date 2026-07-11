@@ -13,6 +13,8 @@ import com.oriole.wisepen.resource.domain.dto.ResourceCheckPermissionResDTO;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentCreateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemCreateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemDeleteRequest;
+import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemReactionDeleteRequest;
+import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemReactionSetRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemUpdateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentResolveRequest;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceInlineCommentResponse;
@@ -35,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.Map;
 
-@Tag(name = "资源行内批注", description = "资源正文或预览载体中的行内批注创建、追加、解决与一次性查询")
+@Tag(name = "资源行内批注", description = "资源正文或预览载体中的行内批注创建、追加、表态、解决与一次性查询")
 @RestController
 @RequestMapping("/resource/inlineComment")
 @RequiredArgsConstructor
@@ -132,6 +134,64 @@ public class ResourceInlineCommentController {
     }
 
     @Operation(
+            summary = "设置行内批注消息表情",
+            description = """
+                    - 用途：让当前用户对行内批注卡片中的某条消息设置或替换一个表情表态。
+                    - 请求：resourceId、inlineCommentId、itemId 和 contentVersion 定位当前内容版本下的消息；emojiId 是前端选择的表情标识。
+                    - 约束：当前用户必须已登录；目标资源、行内批注和消息必须存在；当前用户必须拥有 ResourceAction.INLINE_COMMENT。
+                    - 处理：按当前用户 ID 覆盖 items.reactions 中对应表情；同一用户对同一消息只保留一个 emojiId；不更新批注 updateTime，不改普通评论统计。
+                    - 失败：未登录 -> PermissionError.NOT_LOGIN；资源动作权限裁决未通过 -> ResourceError.RESOURCE_PERMISSION_DENIED；行内批注或消息不存在，或不适用于当前内容版本 -> ResourceError.COMMENT_NOT_FOUND。
+                    - 响应：成功时返回空结果。
+                    """
+    )
+    @PostMapping("/setInlineCommentItemReaction")
+    @Log(title = "设置行内批注消息表情", businessType = BusinessType.UPDATE)
+    public R<Void> setInlineCommentItemReaction(@Validated @RequestBody InlineCommentItemReactionSetRequest request) {
+        String operatorUserId = SecurityContextHolder.getUserId().toString();
+        Map<Long, GroupRoleType> groupRoles = SecurityContextHolder.getGroupRoleMap();
+        ResourceCheckPermissionResDTO permission = resourceService.checkPermission(ResourceCheckPermissionReqDTO.builder()
+                .resourceId(request.getResourceId())
+                .userId(Long.valueOf(operatorUserId))
+                .groupRoles(groupRoles)
+                .targetVersion(request.getContentVersion())
+                .build());
+        if (permission == null || permission.getAllowedActions() == null || !permission.getAllowedActions().contains(ResourceAction.INLINE_COMMENT)) {
+            throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
+        }
+        inlineCommentService.setInlineCommentItemReaction(request, operatorUserId);
+        return R.ok();
+    }
+
+    @Operation(
+            summary = "取消行内批注消息表情",
+            description = """
+                    - 用途：让当前用户取消自己对某条行内批注消息的表情表态。
+                    - 请求：resourceId、inlineCommentId、itemId 和 contentVersion 定位当前内容版本下的消息。
+                    - 约束：当前用户必须已登录；目标资源、行内批注和消息必须存在；当前用户必须拥有 ResourceAction.INLINE_COMMENT。
+                    - 处理：移除 items.reactions 中当前用户 ID 对应的表情；未设置过表情时保持幂等；不更新批注 updateTime，不改普通评论统计。
+                    - 失败：未登录 -> PermissionError.NOT_LOGIN；资源动作权限裁决未通过 -> ResourceError.RESOURCE_PERMISSION_DENIED；行内批注或消息不存在，或不适用于当前内容版本 -> ResourceError.COMMENT_NOT_FOUND。
+                    - 响应：成功时返回空结果。
+                    """
+    )
+    @PostMapping("/deleteInlineCommentItemReaction")
+    @Log(title = "取消行内批注消息表情", businessType = BusinessType.UPDATE)
+    public R<Void> deleteInlineCommentItemReaction(@Validated @RequestBody InlineCommentItemReactionDeleteRequest request) {
+        String operatorUserId = SecurityContextHolder.getUserId().toString();
+        Map<Long, GroupRoleType> groupRoles = SecurityContextHolder.getGroupRoleMap();
+        ResourceCheckPermissionResDTO permission = resourceService.checkPermission(ResourceCheckPermissionReqDTO.builder()
+                .resourceId(request.getResourceId())
+                .userId(Long.valueOf(operatorUserId))
+                .groupRoles(groupRoles)
+                .targetVersion(request.getContentVersion())
+                .build());
+        if (permission == null || permission.getAllowedActions() == null || !permission.getAllowedActions().contains(ResourceAction.INLINE_COMMENT)) {
+            throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
+        }
+        inlineCommentService.deleteInlineCommentItemReaction(request, operatorUserId);
+        return R.ok();
+    }
+
+    @Operation(
             summary = "删除行内批注消息",
             description = """
                     - 用途：删除行内批注卡片中的某条消息。
@@ -187,9 +247,9 @@ public class ResourceInlineCommentController {
                     - 用途：前端打开资源时一次性加载该资源的完整行内批注状态。
                     - 请求：resourceId 必传；contentVersion、resolved 可选；resolved 不传时返回全部行内批注。
                     - 约束：当前用户必须已登录；目标资源必须存在且未被软删除；当前用户必须拥有 ResourceAction.VIEW。
-                    - 处理：按资源、适用版本范围和解决状态筛选批注，批量补 creatorInfo、resolvedByInfo 和 items.authorInfo；不分页，不提供 getInlineCommentDetail，不解析 anchorPayload。
+                    - 处理：按资源、适用版本范围和解决状态筛选批注，批量补 creatorInfo、resolvedByInfo、items.authorInfo 和 reactionGroups.users；不分页，不提供 getInlineCommentDetail，不解析 anchorPayload。
                     - 失败：未登录 -> PermissionError.NOT_LOGIN；资源查看权限裁决未通过 -> ResourceError.RESOURCE_PERMISSION_DENIED。
-                    - 响应：返回 R<List<ResourceInlineCommentResponse>>，每条包含 inlineCommentId、resourceId、applicableFromVersion、applicableToVersion、creatorId、creatorInfo、anchorRef、items、resolved、resolvedBy、resolvedByInfo、resolvedAt、createTime 和 updateTime；items 包含 itemId、authorId、authorInfo、content、imageUrls、mentionUserIds、createTime 和 updateTime。
+                    - 响应：返回 R<List<ResourceInlineCommentResponse>>，每条包含 inlineCommentId、resourceId、applicableFromVersion、applicableToVersion、creatorId、creatorInfo、anchorRef、items、resolved、resolvedBy、resolvedByInfo、resolvedAt、createTime 和 updateTime；items 包含 itemId、authorId、authorInfo、content、imageUrls、mentionUserIds、reactions、reactionGroups、createTime 和 updateTime；reactions 是 userId -> {emojiId、createTime、updateTime}，reactionGroups 每组包含 emojiId、count、reactedByCurrentUser 和 users。
                     """
     )
     @GetMapping("/listInlineComments")
@@ -208,6 +268,6 @@ public class ResourceInlineCommentController {
         if (permission == null || permission.getAllowedActions() == null || !permission.getAllowedActions().contains(ResourceAction.VIEW)) {
             throw new ServiceException(ResourceError.RESOURCE_PERMISSION_DENIED);
         }
-        return R.ok(inlineCommentService.listInlineComments(resourceId, contentVersion, resolved));
+        return R.ok(inlineCommentService.listInlineComments(resourceId, contentVersion, resolved, operatorUserId));
     }
 }

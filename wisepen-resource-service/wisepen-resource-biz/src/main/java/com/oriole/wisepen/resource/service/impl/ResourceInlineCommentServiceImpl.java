@@ -5,12 +5,16 @@ import cn.hutool.core.util.IdUtil;
 import com.oriole.wisepen.common.core.domain.enums.IdentityType;
 import com.oriole.wisepen.common.core.exception.ServiceException;
 import com.oriole.wisepen.resource.domain.base.ResourceInlineCommentItemBase;
+import com.oriole.wisepen.resource.domain.base.ResourceInlineCommentItemReactionBase;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentCreateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemCreateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemDeleteRequest;
+import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemReactionDeleteRequest;
+import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemReactionSetRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemUpdateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentResolveRequest;
 import com.oriole.wisepen.resource.domain.dto.res.InlineCommentItemResponse;
+import com.oriole.wisepen.resource.domain.dto.res.InlineCommentItemReactionGroupResponse;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceInlineCommentResponse;
 import com.oriole.wisepen.resource.domain.entity.ResourceInlineCommentEntity;
 import com.oriole.wisepen.resource.domain.entity.ResourceItemEntity;
@@ -29,6 +33,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -121,6 +126,49 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
     }
 
     @Override
+    public void setInlineCommentItemReaction(InlineCommentItemReactionSetRequest request, String operatorUserId) {
+        String resourceId = request.getResourceId();
+        ResourceInlineCommentEntity inlineComment = getInlineComment(request.getInlineCommentId(), resourceId);
+        if (!isApplicable(inlineComment, request.getContentVersion())) {
+            throw new ServiceException(ResourceError.COMMENT_NOT_FOUND);
+        }
+
+        ResourceInlineCommentItemBase commentItem = inlineComment.getItems() == null ? null : inlineComment.getItems().stream()
+                .filter(candidate -> Objects.equals(candidate.getItemId(), request.getItemId()))
+                .findFirst()
+                .orElse(null);
+        if (commentItem == null) throw new ServiceException(ResourceError.COMMENT_NOT_FOUND);
+
+        LocalDateTime now = LocalDateTime.now();
+        ResourceInlineCommentItemReactionBase reaction = ResourceInlineCommentItemReactionBase.builder()
+                .emojiId(request.getEmojiId())
+                .createTime(now)
+                .build();
+        customInlineCommentRepository.setItemReaction(resourceId, request.getInlineCommentId(), request.getItemId(), operatorUserId, reaction);
+        log.info("inline comment item reaction set. resourceId={} inlineCommentId={} itemId={} operatorUserId={} emojiId={}",
+                resourceId, request.getInlineCommentId(), request.getItemId(), operatorUserId, request.getEmojiId());
+    }
+
+    @Override
+    public void deleteInlineCommentItemReaction(InlineCommentItemReactionDeleteRequest request, String operatorUserId) {
+        String resourceId = request.getResourceId();
+        ResourceInlineCommentEntity inlineComment = getInlineComment(request.getInlineCommentId(), resourceId);
+        if (!isApplicable(inlineComment, request.getContentVersion())) {
+            throw new ServiceException(ResourceError.COMMENT_NOT_FOUND);
+        }
+
+        ResourceInlineCommentItemBase commentItem = inlineComment.getItems() == null ? null : inlineComment.getItems().stream()
+                .filter(candidate -> Objects.equals(candidate.getItemId(), request.getItemId()))
+                .findFirst()
+                .orElse(null);
+        if (commentItem == null) throw new ServiceException(ResourceError.COMMENT_NOT_FOUND);
+
+        customInlineCommentRepository.deleteItemReaction(resourceId, request.getInlineCommentId(), request.getItemId(), operatorUserId);
+        log.info("inline comment item reaction deleted. resourceId={} inlineCommentId={} itemId={} operatorUserId={}",
+                resourceId, request.getInlineCommentId(), request.getItemId(), operatorUserId);
+    }
+
+    @Override
     public void deleteInlineCommentItem(InlineCommentItemDeleteRequest request, String operatorUserId, IdentityType operatorIdentityType) {
         String resourceId = request.getResourceId();
         ResourceItemEntity resource = resourceService.getResourceEntity(resourceId);
@@ -178,7 +226,8 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
     @Override
     public List<ResourceInlineCommentResponse> listInlineComments(String resourceId,
                                                                   Integer contentVersion,
-                                                                  Boolean resolved) {
+                                                                  Boolean resolved,
+                                                                  String operatorUserId) {
         resourceService.getResourceEntity(resourceId);
 
         List<ResourceInlineCommentEntity> inlineComments = customInlineCommentRepository.listInlineComments(
@@ -191,7 +240,14 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
             if (StringUtils.hasText(inlineComment.getResolvedBy())) userIds.add(Long.valueOf(inlineComment.getResolvedBy()));
             if (inlineComment.getItems() != null) {
                 for (ResourceInlineCommentItemBase item : inlineComment.getItems()) {
+                    // 收集评论作者 userIds
                     if (StringUtils.hasText(item.getAuthorId())) userIds.add(Long.valueOf(item.getAuthorId()));
+                    // 收集评论互动人员 userIds
+                    if (item.getReactions() != null) {
+                        for (String reactionUserId : item.getReactions().keySet()) {
+                            if (StringUtils.hasText(reactionUserId)) userIds.add(Long.valueOf(reactionUserId));
+                        }
+                    }
                 }
             }
         }
@@ -215,6 +271,26 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
                 for (ResourceInlineCommentItemBase commentItem : entity.getItems()) {
                     InlineCommentItemResponse commentItemResponse = BeanUtil.copyProperties(commentItem, InlineCommentItemResponse.class);
                     commentItemResponse.setAuthorInfo(userMap.get(Long.valueOf(commentItem.getAuthorId())));
+
+                    Map<String, InlineCommentItemReactionGroupResponse> reactionGroupMap = new LinkedHashMap<>();
+                    // 这条 item 有人点过表情，才开始组装 reactionGroups
+                    if (commentItemResponse.getReactions() != null && !commentItemResponse.getReactions().isEmpty()) {
+                        // 遍历每个用户的 reaction
+                        for (Map.Entry<String, ResourceInlineCommentItemReactionBase> entry : commentItemResponse.getReactions().entrySet()) {
+                            String reactionUserId = entry.getKey();
+                            ResourceInlineCommentItemReactionBase reaction = entry.getValue();
+                            // 如果当前 emojiId 的分组还不存在，就创建一个，如果已经存在，就复用已有分组
+                            InlineCommentItemReactionGroupResponse reactionGroup = reactionGroupMap.computeIfAbsent(reaction.getEmojiId(),
+                                    emojiId -> InlineCommentItemReactionGroupResponse.builder().emojiId(emojiId).build());
+                            reactionGroup.setCount(reactionGroup.getCount() + 1); // 表情计数 +1
+                            // 如果当前遍历到的是当前登录用户的 reaction，就标记这一组
+                            if (Objects.equals(reactionUserId, operatorUserId)) reactionGroup.setReactedByCurrentUser(true);
+                            // 从前面批量查询好的 userMap 里取这个 reaction 用户的展示信息，放进该表情分组的 users 里
+                            UserDisplayBase reactionUserInfo = userMap.get(Long.valueOf(reactionUserId));
+                            if (reactionUserInfo != null) reactionGroup.getUsers().add(reactionUserInfo);
+                        }
+                    }
+                    commentItemResponse.setReactionGroups(new ArrayList<>(reactionGroupMap.values()));
                     commentItemResponses.add(commentItemResponse);
                 }
             }

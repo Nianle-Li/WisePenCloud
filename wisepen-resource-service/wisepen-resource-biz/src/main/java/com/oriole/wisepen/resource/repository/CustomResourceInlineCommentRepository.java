@@ -1,6 +1,7 @@
 package com.oriole.wisepen.resource.repository;
 
 import com.oriole.wisepen.resource.domain.base.ResourceInlineCommentItemBase;
+import com.oriole.wisepen.resource.domain.base.ResourceInlineCommentItemReactionBase;
 import com.oriole.wisepen.resource.domain.entity.ResourceInlineCommentEntity;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
@@ -83,6 +84,23 @@ public class CustomResourceInlineCommentRepository {
                 .set("items.$.mentionUserIds", mentionUserIds)
                 .set("items.$.updateTime", now)
                 .set("updateTime", now);
+        mongoTemplate.updateFirst(query, update, ResourceInlineCommentEntity.class);
+    }
+
+    public void setItemReaction(String resourceId, String inlineCommentId, String itemId,
+                                String operatorUserId, ResourceInlineCommentItemReactionBase reaction) {
+        Query query = Query.query(Criteria.where("_id").is(inlineCommentId)
+                .and("resourceId").is(resourceId)
+                .and("items").elemMatch(Criteria.where("itemId").is(itemId)));
+        Update update = new Update().set("items.$.reactions." + operatorUserId, reaction);
+        mongoTemplate.updateFirst(query, update, ResourceInlineCommentEntity.class);
+    }
+
+    public void deleteItemReaction(String resourceId, String inlineCommentId, String itemId, String operatorUserId) {
+        Query query = Query.query(Criteria.where("_id").is(inlineCommentId)
+                .and("resourceId").is(resourceId)
+                .and("items").elemMatch(Criteria.where("itemId").is(itemId)));
+        Update update = new Update().unset("items.$.reactions." + operatorUserId);
         mongoTemplate.updateFirst(query, update, ResourceInlineCommentEntity.class);
     }
 
