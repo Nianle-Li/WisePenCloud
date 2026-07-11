@@ -8,6 +8,7 @@ import com.oriole.wisepen.resource.domain.base.ResourceInlineCommentItemBase;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentCreateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemCreateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemDeleteRequest;
+import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemUpdateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentResolveRequest;
 import com.oriole.wisepen.resource.domain.dto.res.InlineCommentItemResponse;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceInlineCommentResponse;
@@ -54,7 +55,7 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
         ResourceInlineCommentItemBase commentItem = ResourceInlineCommentItemBase.builder()
                 .itemId(IdUtil.fastSimpleUUID()).authorId(operatorUserId)
                 .createTime(now).updateTime(now).build();
-        BeanUtil.copyProperties(commentItem, request);
+        BeanUtil.copyProperties(request, commentItem);
 
         // 构建锚点
         ResourceInlineCommentEntity.AnchorRef anchorRef = BeanUtil.copyProperties(request, ResourceInlineCommentEntity.AnchorRef.class);
@@ -89,11 +90,34 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
         ResourceInlineCommentItemBase commentItem = ResourceInlineCommentItemBase.builder()
                 .itemId(IdUtil.fastSimpleUUID()).authorId(operatorUserId)
                 .createTime(now).updateTime(now).build();
-        BeanUtil.copyProperties(commentItem, request);
+        BeanUtil.copyProperties(request, commentItem);
         customInlineCommentRepository.appendItem(resourceId, request.getInlineCommentId(), commentItem);
 
         log.info("inline comment item created. resourceId={} inlineCommentId={} itemId={} authorId={}", resourceId, request.getInlineCommentId(), commentItem.getItemId(), operatorUserId);
         return commentItem.getItemId();
+    }
+
+    @Override
+    public void updateInlineCommentItem(InlineCommentItemUpdateRequest request, String operatorUserId) {
+        String resourceId = request.getResourceId();
+        ResourceInlineCommentEntity inlineComment = getInlineComment(request.getInlineCommentId(), resourceId);
+        if (!isApplicable(inlineComment, request.getContentVersion())) {
+            throw new ServiceException(ResourceError.COMMENT_NOT_FOUND);
+        }
+
+        ResourceInlineCommentItemBase commentItem = inlineComment.getItems().stream()
+                .filter(candidate -> Objects.equals(candidate.getItemId(), request.getItemId()))
+                .findFirst()
+                .orElseThrow(() -> new ServiceException(ResourceError.COMMENT_NOT_FOUND));
+
+        if (!Objects.equals(commentItem.getAuthorId(), operatorUserId)) {
+            throw new ServiceException(ResourceError.COMMENT_UPDATE_ACCESS_DENIED);
+        }
+
+        customInlineCommentRepository.updateItem(resourceId, request.getInlineCommentId(), request.getItemId(), operatorUserId,
+                request.getContent(), request.getImageUrls(), request.getMentionUserIds());
+        log.info("inline comment item updated. resourceId={} inlineCommentId={} itemId={} operatorUserId={}",
+                resourceId, request.getInlineCommentId(), request.getItemId(), operatorUserId);
     }
 
     @Override
@@ -104,7 +128,6 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
 
         ResourceInlineCommentItemBase commentItem = inlineComment.getItems().stream()
                 .filter(candidate -> Objects.equals(candidate.getItemId(), request.getItemId()))
-                .filter(candidate -> candidate.getDeletedAt() == null)
                 .findFirst()
                 .orElseThrow(() -> new ServiceException(ResourceError.COMMENT_NOT_FOUND));
 
@@ -115,7 +138,11 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
             throw new ServiceException(ResourceError.COMMENT_DELETE_ACCESS_DENIED);
         }
 
-        customInlineCommentRepository.softDeleteItem(resourceId, request.getInlineCommentId(), request.getItemId());
+        if (inlineComment.getItems().size() <= 1) {
+            customInlineCommentRepository.deleteInlineComment(resourceId, request.getInlineCommentId());
+        } else {
+            customInlineCommentRepository.deleteItem(resourceId, request.getInlineCommentId(), request.getItemId());
+        }
         log.info("inline comment item deleted. resourceId={} inlineCommentId={} itemId={} operatorUserId={}",
                 resourceId, request.getInlineCommentId(), request.getItemId(), operatorUserId);
     }
@@ -187,10 +214,6 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
             if (entity.getItems() != null) {
                 for (ResourceInlineCommentItemBase commentItem : entity.getItems()) {
                     InlineCommentItemResponse commentItemResponse = BeanUtil.copyProperties(commentItem, InlineCommentItemResponse.class);
-                    if (commentItemResponse.getDeletedAt() != null) {
-                        commentItemResponse.setContent(null);
-                        commentItemResponse.setImageUrls(null);
-                    }
                     commentItemResponse.setAuthorInfo(userMap.get(Long.valueOf(commentItem.getAuthorId())));
                     commentItemResponses.add(commentItemResponse);
                 }
@@ -201,12 +224,13 @@ public class ResourceInlineCommentServiceImpl implements IResourceInlineCommentS
             if (StringUtils.hasText(entity.getResolvedBy())) { // 仅处理已被解决的 Comment
                 commentResponse.setResolvedByInfo(userMap.get(Long.valueOf(entity.getResolvedBy())));
             }
+            responses.add(commentResponse);
         }
         return responses;
     }
 
     private ResourceInlineCommentEntity getInlineComment(String inlineCommentId, String resourceId) {
-        return inlineCommentRepository.findByIdAndResourceIdAndDeletedAtIsNull(inlineCommentId, resourceId)
+        return inlineCommentRepository.findByIdAndResourceId(inlineCommentId, resourceId)
                 .orElseThrow(() -> new ServiceException(ResourceError.COMMENT_NOT_FOUND));
     }
 

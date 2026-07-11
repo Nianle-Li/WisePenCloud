@@ -27,15 +27,4 @@ public class ResourceInlineCommentItemBase {
 
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
-
-    /** null 表示未软删除 */
-    private LocalDateTime deletedAt;
-
-    public String getContent() {
-        return this.deletedAt != null ? null : content;
-    }
-
-    public List<String> getImageUrls() {
-        return this.deletedAt != null ? null : imageUrls;
-    }
 }

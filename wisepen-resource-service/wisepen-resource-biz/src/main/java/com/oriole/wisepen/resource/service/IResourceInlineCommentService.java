@@ -4,6 +4,7 @@ import com.oriole.wisepen.common.core.domain.enums.IdentityType;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentCreateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemCreateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemDeleteRequest;
+import com.oriole.wisepen.resource.domain.dto.req.InlineCommentItemUpdateRequest;
 import com.oriole.wisepen.resource.domain.dto.req.InlineCommentResolveRequest;
 import com.oriole.wisepen.resource.domain.dto.res.ResourceInlineCommentResponse;
 
@@ -16,6 +17,9 @@ public interface IResourceInlineCommentService {
 
     String addInlineCommentItem(InlineCommentItemCreateRequest request,
                                 String operatorUserId);
+
+    void updateInlineCommentItem(InlineCommentItemUpdateRequest request,
+                                 String operatorUserId);
 
     void deleteInlineCommentItem(InlineCommentItemDeleteRequest request,
                                  String operatorUserId,
